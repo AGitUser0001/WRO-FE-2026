@@ -35,4 +35,10 @@ install(DIRECTORY
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  launch/wro_planner.py
+  launch/wro_planner_simulator.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()
