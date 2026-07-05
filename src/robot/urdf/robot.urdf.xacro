@@ -1,0 +1,639 @@
+<?xml version="1.0" ?>
+<robot name="robot"
+  xmlns:xacro="http://www.ros.org/wiki/xacro" canonical_link='base_link'>
+  <xacro:property name="PI" value="3.1415926835897931"/>
+  <xacro:property name="wheel_base" value="0.138" />
+  <xacro:property name="wheel_track" value="0.135" />
+  <xacro:property name="wheel_radius" value="${rear_tyre_r}" />
+  <xacro:property name="car_body_length" value="0.22"/>
+  <xacro:property name="car_body_width" value="0.12"/>
+  <xacro:property name="car_body_height" value="0.145"/>
+  <xacro:property name="car_body_mass" value="1.45"/>
+  <xacro:property name="rear_tyre_x" value="0"/>
+  <xacro:property name="rear_tyre_y" value="0.075"/>
+  <xacro:property name="rear_tyre_r" value="0.0323"/>
+  <xacro:property name="rear_tyre_length" value="0.02"/>
+  <xacro:property name="rear_tyre_mass" value="0.08"/>
+
+  <xacro:property name="rear_tyre_to_carbody_end" value="0.053" />
+  <xacro:property name="front_tyre_x" value="0.1328"/>
+  <xacro:property name="front_tyre_y" value="0.081"/>
+  <xacro:property name="front_tyre_r" value="0.02515"/>
+  <xacro:property name="front_tyre_length" value="0.02"/>
+  <xacro:property name="front_tyre_mass" value="0.01"/>
+  <xacro:property name="str_angle" value="0.6"/>
+  <xacro:property name="str_length" value="0.00629"/>
+  <xacro:property name="str_radius" value="0.003"/>
+  <xacro:property name="str_mass" value="0.002"/>
+  <xacro:property name="camera_x" value="0.163" />
+  <xacro:property name="camera_y" value="0.0" />
+  <xacro:property name="camera_z" value="0.0778" />
+  <xacro:property name="camera_box_x" value="0.09" />
+  <xacro:property name="camera_box_y" value="0.0258" />
+  <xacro:property name="camera_box_z" value="0.025" />
+  <xacro:property name="camera_box_mass" value="0.086" />
+  <xacro:property name="lidar_box_x" value="0.0463" />
+  <xacro:property name="lidar_box_y" value="0.054" />
+  <xacro:property name="lidar_box_z" value="0.0348" />
+  <xacro:property name="lidar_box_mass" value="0.035" />
+  <xacro:property name="front_lidar_x" value="0.1325" />
+  <xacro:property name="front_lidar_y" value="-0.023" />
+  <xacro:property name="front_lidar_z" value="0.035" />
+  <xacro:property name="rear_lidar_x" value="-0.018" />
+  <xacro:property name="rear_lidar_y" value="0.028" />
+  <xacro:property name="rear_lidar_z" value="0.04" />
+  <xacro:property name="imu_x" value="-0.008" />
+  <xacro:property name="imu_y" value="0.0" />
+  <xacro:property name="imu_z" value="0.0710" />
+  <xacro:property name="imu_box_x" value="0.04" />
+  <xacro:property name="imu_box_y" value="0.036" />
+  <xacro:property name="imu_box_z" value="0.0126" />
+  <xacro:property name="imu_box_mass" value="0.019" />
+  <xacro:include filename="colours.xacro" />
+  <xacro:include filename="inertial_macros.xacro" />
+  <link name="base_link"></link>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_footprint"/>
+    <origin xyz="0 0 ${-wheel_radius}"/>
+  </joint>
+
+  <link name="base_footprint"></link>
+  <joint name="car_body_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="car_body_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="car_body_link">
+    <collision>
+      <origin xyz="${rear_tyre_to_carbody_end} 0 ${wheel_radius * 2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${car_body_length} ${car_body_width} ${car_body_height}"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 -${PI/2}"/>
+
+      <geometry>
+        <mesh filename="package://robot/meshes/car_body_hidden.stl" scale="1 1 1"/>
+      </geometry>
+      <material name="orange"/>
+    </visual>
+
+    <xacro:inertial_box mass="${car_body_mass}" x="${car_body_length}" y="${car_body_width}" z="${car_body_height}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+  <joint name="rear_right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="rear_right_wheel_link"/>
+    <origin xyz="${rear_tyre_x} -${rear_tyre_y} ${rear_tyre_r - rear_tyre_r}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <dynamics damping="0.1"/>
+    <limit effort="20" velocity="30"/>
+  </joint>
+
+  <link name="rear_right_wheel_link">
+    <collision>
+      <origin xyz="0 0.008 0" rpy="${PI/2} ${PI/2} 0"/>
+      <geometry>
+        <cylinder length="${rear_tyre_length}" radius="${rear_tyre_r}"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin xyz="0 0 0" rpy="-${PI/2} -${PI/2} 0"/>
+
+      <geometry>
+        <mesh filename="package://robot/meshes/rear_tyre_right.dae" scale="1 1 1"/>
+      </geometry>
+    </visual>
+
+    <xacro:inertial_cylinder mass="${rear_tyre_mass}" radius="${rear_tyre_r}" length="${rear_tyre_length}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_cylinder>
+
+  </link>
+  <joint name="rear_left_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="rear_left_wheel_link"/>
+    <origin xyz="${rear_tyre_x} ${rear_tyre_y} ${rear_tyre_r - rear_tyre_r}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <dynamics damping="0.1"/>
+    <limit effort="20" velocity="30"/>
+  </joint>
+
+  <link name="rear_left_wheel_link">
+    <collision>
+      <origin xyz="0 -0.008 0" rpy="${PI/2} ${PI/2} 0"/>
+      <geometry>
+        <cylinder length="${rear_tyre_length}" radius="${rear_tyre_r}"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin xyz="0 0 0" rpy="${PI/2} ${PI/2} 0"/>
+
+      <geometry>
+        <mesh filename="package://robot/meshes/rear_tyre_left.dae" scale="1 1 1"/>
+      </geometry>
+    </visual>
+
+    <xacro:inertial_cylinder mass="${rear_tyre_mass}" radius="${rear_tyre_r}" length="${rear_tyre_length}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_cylinder>
+  </link>
+  <joint name="front_right_steering_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="front_right_steering_link"/>
+    <origin xyz="${front_tyre_x} -${front_tyre_y} ${front_tyre_r - rear_tyre_r}" rpy="0 0 0"/>
+    <axis xyz="0 0 -1"/>
+    <limit lower="${-str_angle}" upper="${str_angle}" effort="20" velocity="30"/>
+    <dynamics damping="10.0" friction="0.0"/>
+  </joint>
+
+  <link name="front_right_steering_link">
+    <collision>
+      <origin xyz="0 0 0" rpy="0 -${PI/2} -${PI/2}"/>
+      <geometry>
+        <cylinder length="${str_length}" radius="${str_radius}"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin xyz="0 0.0001 -0.0001" rpy="0 -${PI/2} -${PI/2}"/>
+
+      <geometry>
+        <mesh filename="package://robot/meshes/front_right_steering.dae" scale="1 1 1"/>
+      </geometry>
+    </visual>
+
+    <xacro:inertial_cylinder mass="${str_mass}" radius="${str_radius}" length="${str_length}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_cylinder>
+  </link>
+  <joint name="front_right_wheel_joint" type="continuous">
+    <parent link="front_right_steering_link"/>
+    <child link="front_right_wheel_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <dynamics damping="0.1"/>
+    <limit effort="20" velocity="30"/>
+  </joint>
+
+  <link name="front_right_wheel_link">
+    <collision>
+      <origin xyz="0 0.01 0" rpy="0 -${PI/2} ${PI/2}"/>
+      <geometry>
+        <cylinder length="${front_tyre_length}" radius="${front_tyre_r}"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin xyz="0 0.004 0" rpy="${PI} -${PI/2} ${PI/2}"/>
+
+      <geometry>
+        <mesh filename="package://robot/meshes/front_tyre_right.dae" scale="1 1 1"/>
+      </geometry>
+    </visual>
+
+    <xacro:inertial_cylinder mass="${front_tyre_mass}" radius="${front_tyre_r}" length="${front_tyre_length}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_cylinder>
+  </link>
+  <joint name="front_left_steering_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="front_left_steering_link"/>
+    <origin xyz="${front_tyre_x} ${front_tyre_y} ${front_tyre_r - rear_tyre_r}" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${-str_angle}" upper="${str_angle}" effort="20" velocity="30"/>
+    <dynamics damping="10.0" friction="0.0"/>
+  </joint>
+
+  <link name="front_left_steering_link">
+    <collision>
+      <origin xyz="0 0 0" rpy="0 ${PI/2} ${PI/2}"/>
+      <geometry>
+        <cylinder length="${str_length}" radius="${str_radius}"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin xyz="-0.0002 0.0008 -0.0003" rpy="0 -${PI/2} ${PI/2}"/>
+
+      <geometry>
+        <mesh filename="package://robot/meshes/front_left_steering.dae" scale="1 1 1"/>
+      </geometry>
+    </visual>
+
+    <xacro:inertial_cylinder mass="${str_mass}" radius="${str_radius}" length="${str_length}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_cylinder>
+  </link>
+  <joint name="front_left_wheel_joint" type="continuous">
+    <parent link="front_left_steering_link"/>
+    <child link="front_left_wheel_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <dynamics damping="0.1"/>
+    <limit effort="20" velocity="30"/>
+  </joint>
+
+  <link name="front_left_wheel_link">
+    <collision>
+      <origin xyz="0 -0.01 0" rpy="${PI/2} 0 0"/>
+      <geometry>
+        <cylinder length="${front_tyre_length}" radius="${front_tyre_r}"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin xyz="0 -0.0025 0" rpy="${PI/2} 0 0"/>
+
+      <geometry>
+        <mesh filename="package://robot/meshes/front_tyre_left.dae" scale="1 1 1"/>
+      </geometry>
+    </visual>
+
+    <xacro:inertial_cylinder mass="${front_tyre_mass}" radius="${front_tyre_r}" length="${front_tyre_length}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_cylinder>
+  </link>
+  <joint name="camera_d435f_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_d435f"/>
+    <origin xyz="${camera_x} ${camera_y} ${camera_z}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_d435f">
+    <collision name="collision-base">
+      <origin xyz="-0.012 0 0" rpy="${PI/2} 0 ${PI/2}"/>
+      <geometry>
+        <box size="${camera_box_x} ${camera_box_y} ${camera_box_z}"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="${PI/2} 0 ${PI/2}"/>
+
+      <geometry>
+        <mesh filename="package://robot/meshes/Camera_D435f.dae" scale="1 1 1"/>
+      </geometry>
+    </visual>
+
+    <xacro:inertial_box mass="${camera_box_mass}" x="${camera_box_x}" y="${camera_box_y}" z="${camera_box_z}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+
+  <joint name="camera_d435f_to_camera_link" type="fixed">
+    <parent link="camera_d435f"/>
+    <child link="camera_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_link"/>
+  <gazebo reference="camera_d435f">
+    <sensor name="camera_d435f" type="rgbd_camera">
+      <always_on>1</always_on>
+      <update_rate>15</update_rate>
+      <visualize>true</visualize>
+      <topic>/camera/camera/color</topic>
+      <camera_info_topic>/camera/camera/color/camera_info</camera_info_topic>
+      <ignition_frame_id>camera_d435f</ignition_frame_id>
+      <enable_metrics>true</enable_metrics>
+      <camera name="camera">
+        <horizontal_fov>1.204</horizontal_fov>
+        <lens>
+          <intrinsics>
+            <fx>554.25469</fx>
+            <fy>554.25469</fy>
+            <cx>320.5</cx>
+            <cy>240.5</cy>
+            <s>0</s>
+          </intrinsics>
+        </lens>
+        <distortion>
+          <k1>0.0</k1>
+          <k2>0.0</k2>
+          <k3>0.0</k3>
+          <p1>0.0</p1>
+          <p2>0.0</p2>
+          <center>0.5 0.5</center>
+        </distortion>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>RGB_INT8</format>
+        </image>
+        <clip>
+          <near>0.01</near>
+          <far>300</far>
+        </clip>
+        <depth_camera>
+          <clip>
+            <near>0.1</near>
+            <far>10</far>
+          </clip>
+        </depth_camera>
+        <noise>
+          <type>gaussian</type>
+          <mean>0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+    </sensor>
+  </gazebo>
+  <joint name="front_lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="front_lidar"/>
+    <origin xyz="${front_lidar_x} ${front_lidar_y} ${front_lidar_z}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="front_lidar">
+    <collision name="collision-base">
+      <origin xyz="0 0 0" rpy="0 0 ${PI}"/>
+      <geometry>
+        <box size="${lidar_box_x} ${lidar_box_y} ${lidar_box_z}"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.00005 0.0005 -${wheel_radius / 2 + 0.001}" rpy="0 0 -${PI/2}"/>
+
+      <geometry>
+        <mesh filename="package://robot/meshes/front_lidar.dae" scale="1 1 1"/>
+      </geometry>
+    </visual>
+
+    <xacro:inertial_box mass="${lidar_box_mass}" x="${lidar_box_x}" y="${lidar_box_y}" z="${lidar_box_z}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+  <gazebo reference="front_lidar">
+    <sensor name="front_lidar" type="gpu_lidar">
+      <always_on>1</always_on>
+      <update_rate>10</update_rate>
+      <visualize>true</visualize>
+      <topic>/lidar1/scan</topic>
+      <ignition_frame_id>front_lidar</ignition_frame_id>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>450</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>1</samples>
+            <resolution>1</resolution>
+            <min_angle>0</min_angle>
+            <max_angle>0</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.02</min>
+          <max>12.0</max>
+          <resolution>0.001</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.02</stddev>
+        </noise>
+      </ray>
+    </sensor>
+  </gazebo>
+  <joint name="rear_lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="rear_lidar"/>
+    <origin xyz="${rear_lidar_x} ${rear_lidar_y} ${rear_lidar_z}" rpy="0 0 ${PI}"/>
+  </joint>
+
+  <link name="rear_lidar">
+    <collision name="collision-base">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${lidar_box_x} ${lidar_box_y} ${lidar_box_z}"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.0034 0 -${wheel_radius / 2 + 0.001}" rpy="0 0 -${PI/2}"/>
+
+      <geometry>
+        <mesh filename="package://robot/meshes/rear_lidar.dae" scale="1 1 1"/>
+      </geometry>
+    </visual>
+
+    <xacro:inertial_box mass="${lidar_box_mass}" x="${lidar_box_x}" y="${lidar_box_y}" z="${lidar_box_z}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+  <gazebo reference="rear_lidar">
+    <sensor name="rear_lidar" type="gpu_lidar">
+      <always_on>1</always_on>
+      <update_rate>10</update_rate>
+      <visualize>true</visualize>
+      <topic>/lidar2/scan</topic>
+      <ignition_frame_id>rear_lidar</ignition_frame_id>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>450</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>1</samples>
+            <resolution>1</resolution>
+            <min_angle>0</min_angle>
+            <max_angle>0</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.02</min>
+          <max>12.0</max>
+          <resolution>0.001</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.02</stddev>
+        </noise>
+      </ray>
+    </sensor>
+  </gazebo>
+  <joint name="laser_frame_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_frame"/>
+    <origin xyz="${(front_lidar_x + rear_lidar_x) / 2} ${(front_lidar_y + rear_lidar_y) / 2} ${(front_lidar_z + rear_lidar_z) / 2}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="laser_frame"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="${imu_x} ${imu_y} ${imu_z}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="imu_link">
+    <collision name="collision-base">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${imu_box_x} ${imu_box_y} ${imu_box_z}"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 -${PI/2}"/>
+
+      <geometry>
+        <mesh filename="package://robot/meshes/IMU.dae" scale="1 1 1"/>
+      </geometry>
+    </visual>
+
+    <xacro:inertial_box mass="${imu_box_mass}" x="${imu_box_x}" y="${imu_box_y}" z="${imu_box_z}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+
+  <joint name="imu_link_to_imu" type="fixed">
+    <parent link="imu_link"/>
+    <child link="imu"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="imu"/>
+  <gazebo reference="imu_link">
+    <sensor name="imu_link" type="imu">
+      <always_on>1</always_on>
+      <update_rate>100</update_rate>
+      <visualize>true</visualize>
+      <topic>/imu_data</topic>
+      <ignition_frame_id>imu_link</ignition_frame_id>
+      <imu>
+        <angular_velocity>
+          <x>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.001</stddev>
+              <bias_mean>0.0001</bias_mean>
+              <bias_stddev>0.00001</bias_stddev>
+            </noise>
+          </x>
+          <y>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.001</stddev>
+              <bias_mean>0.0001</bias_mean>
+              <bias_stddev>0.00001</bias_stddev>
+            </noise>
+          </y>
+          <z>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.001</stddev>
+              <bias_mean>0.0001</bias_mean>
+              <bias_stddev>0.00001</bias_stddev>
+            </noise>
+          </z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.02</stddev>
+              <bias_mean>0.001</bias_mean>
+              <bias_stddev>0.0005</bias_stddev>
+            </noise>
+          </x>
+          <y>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.02</stddev>
+              <bias_mean>0.001</bias_mean>
+              <bias_stddev>0.0005</bias_stddev>
+            </noise>
+          </y>
+          <z>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.02</stddev>
+              <bias_mean>0.001</bias_mean>
+              <bias_stddev>0.0005</bias_stddev>
+            </noise>
+          </z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+  </gazebo>
+  <gazebo reference="car_body_link">
+    <mu1>0.8</mu1>
+    <mu2>0.8</mu2>
+  </gazebo>
+
+  <gazebo reference="front_right_wheel_link">
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+  </gazebo>
+
+  <gazebo reference="front_left_wheel_link">
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+  </gazebo>
+
+  <gazebo reference="rear_right_wheel_link">
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+  </gazebo>
+
+  <gazebo reference="rear_left_wheel_link">
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+  </gazebo>
+
+  <gazebo>
+    <plugin filename="libignition-gazebo-ackermann-steering-system.so" name="ignition::gazebo::systems::AckermannSteering">
+      <left_steering_joint>front_left_steering_joint</left_steering_joint>
+      <right_steering_joint>front_right_steering_joint</right_steering_joint>
+      <left_joint>rear_left_wheel_joint</left_joint>
+      <right_joint>rear_right_wheel_joint</right_joint>
+      <wheel_base>${wheel_base}</wheel_base>
+      <wheel_track>${wheel_track}</wheel_track>
+      <wheel_radius>${wheel_radius}</wheel_radius>
+      <min_velocity>-30</min_velocity>
+      <max_velocity>30</max_velocity>
+      <min_acceleration>-20</min_acceleration>
+      <max_acceleration>20</max_acceleration>
+      <topic>cmd_vel</topic>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_link</child_frame_id>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin filename="libignition-gazebo-joint-state-publisher-system.so" name="ignition::gazebo::systems::JointStatePublisher">
+      <joint_name>front_left_wheel_joint</joint_name>
+      <joint_name>rear_left_wheel_joint</joint_name>
+      <joint_name>front_right_wheel_joint</joint_name>
+      <joint_name>rear_right_wheel_joint</joint_name>
+      <joint_name>front_left_steering_joint</joint_name>
+      <joint_name>front_right_steering_joint</joint_name>
+      <topic>/joint_states</topic>
+    </plugin>
+    <plugin filename="ignition-gazebo-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+      <publish_link_pose>false</publish_link_pose>
+      <publish_collision_pose>false</publish_collision_pose>
+      <publish_visual_pose>false</publish_visual_pose>
+      <publish_sensor_pose>false</publish_sensor_pose>
+      <publish_model_pose>true</publish_model_pose>
+      <use_pose_vector_msg>true</use_pose_vector_msg>
+      <publish_nested_model_pose>true</publish_nested_model_pose>
+      <update_frequency>50</update_frequency>
+    </plugin>
+  </gazebo>
+
+</robot>
