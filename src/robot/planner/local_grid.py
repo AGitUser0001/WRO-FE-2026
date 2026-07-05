@@ -9,7 +9,7 @@ from .grid import Cell, GridSpec
 
 
 class LocalGrid:
-        def __init__(self, size_m: float = 1.5, resolution_m: float = 0.05):
+    def __init__(self, size_m: float = 1.5, resolution_m: float = 0.05):
         self.spec = GridSpec(size_m=size_m, resolution_m=resolution_m)
         self.resolution_m = self.spec.resolution_m
         self.size_cells = self.spec.cells
