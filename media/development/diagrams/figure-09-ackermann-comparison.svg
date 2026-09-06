@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">Steering geometry comparison</title>
+  <desc id="desc">A conceptual comparison between the reference platform's inverse Ackermann geometry and the final vehicle's positive Ackermann geometry.</desc>
+  <style>
+    .panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:3}.body{fill:#475569;stroke:#1e293b;stroke-width:4}.wheel{fill:#e2e8f0;stroke:#1e293b;stroke-width:4}.axis{stroke:#64748b;stroke-width:3}.ray{stroke:#0f766e;stroke-width:3;stroke-dasharray:10 9}.guide{stroke:#94a3b8;stroke-width:2;stroke-dasharray:5 7}.label{font-family:Arial,sans-serif;fill:#0f172a}.h{font-size:28px;font-weight:700}.b{font-size:22px}.small{font-size:19px;fill:#334155}.ok{fill:#0f766e;font-weight:700}.warn{fill:#b45309;font-weight:700}
+  </style>
+  <rect width="1200" height="620" fill="white"/>
+  <rect class="panel" x="30" y="30" width="540" height="560" rx="18"/>
+  <rect class="panel" x="630" y="30" width="540" height="560" rx="18"/>
+  <text class="label h" x="300" y="78" text-anchor="middle">Reference platform: inverse Ackermann</text>
+  <text class="label h" x="900" y="78" text-anchor="middle">Final vehicle: positive Ackermann</text>
+  <text class="label small" x="300" y="108" text-anchor="middle">Observed reference geometry; not the final design</text>
+  <text class="label small" x="900" y="108" text-anchor="middle">Selected for low-speed, repeatable turns</text>
+  <!-- left panel -->
+  <rect class="body" x="212" y="260" width="175" height="150" rx="16"/>
+  <line class="axis" x1="110" y1="335" x2="490" y2="335"/>
+  <g transform="translate(158 258) rotate(-34)"><rect class="wheel" x="-22" y="-46" width="44" height="92" rx="8"/></g>
+  <g transform="translate(440 258) rotate(16)"><rect class="wheel" x="-22" y="-46" width="44" height="92" rx="8"/></g>
+  <g transform="translate(158 414) rotate(0)"><rect class="wheel" x="-22" y="-46" width="44" height="92" rx="8"/></g>
+  <g transform="translate(440 414) rotate(0)"><rect class="wheel" x="-22" y="-46" width="44" height="92" rx="8"/></g>
+  <line class="ray" x1="158" y1="258" x2="68" y2="545"/><line class="ray" x1="440" y1="258" x2="68" y2="545"/>
+  <circle cx="68" cy="545" r="7" fill="#0f766e"/><text class="label b" x="88" y="552">turn centre</text>
+  <text class="label warn" x="300" y="472" text-anchor="middle">Outer wheel is steered more than inner wheel</text>
+  <!-- right panel -->
+  <rect class="body" x="812" y="260" width="175" height="150" rx="16"/>
+  <line class="axis" x1="710" y1="335" x2="1090" y2="335"/>
+  <g transform="translate(758 258) rotate(-16)"><rect class="wheel" x="-22" y="-46" width="44" height="92" rx="8"/></g>
+  <g transform="translate(1040 258) rotate(34)"><rect class="wheel" x="-22" y="-46" width="44" height="92" rx="8"/></g>
+  <g transform="translate(758 414) rotate(0)"><rect class="wheel" x="-22" y="-46" width="44" height="92" rx="8"/></g>
+  <g transform="translate(1040 414) rotate(0)"><rect class="wheel" x="-22" y="-46" width="44" height="92" rx="8"/></g>
+  <line class="ray" x1="758" y1="258" x2="1132" y2="545"/><line class="ray" x1="1040" y1="258" x2="1132" y2="545"/>
+  <circle cx="1132" cy="545" r="7" fill="#0f766e"/><text class="label b" x="1113" y="570" text-anchor="end">turn centre</text>
+  <text class="label ok" x="900" y="472" text-anchor="middle">Inner wheel is steered more than outer wheel</text>
+  <text class="label small" x="900" y="514" text-anchor="middle">Wheel-axis extensions meet at one turn centre</text>
+  <text class="label small" x="600" y="606" text-anchor="middle">Conceptual steering diagram — physical dimensions and CAD geometry are documented separately.</text>
+</svg>
