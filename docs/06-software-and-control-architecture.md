@@ -10,11 +10,11 @@ This was not a departure from ROS 2. ROS 2 remains the communication and driver 
 
 The first software architecture deliberately centred on the ROS 2 ecosystem: sensor topics would feed perception, localisation, SLAM, Nav2, and actuator control, while the Jetson would command the ESP32 through the network.
 
-![Initial autonomous-car software architecture.](../../diagrams/autonomous_car_diagram_en.png)
+![Initial autonomous-car software architecture.](../media/diagrams/autonomous_car_diagram_en.png)
 
 The early brainstorming map records the same intent: reuse common ROS libraries and begin with SLAM, Nav2, sensor fusion, and simulator tools rather than writing a dedicated navigator at the outset.
 
-![Early software-development mind map.](../../mindmaps/autonomous_car_mindmap_en.png)
+![Early software-development mind map.](../media/mindmaps/autonomous_car_mindmap_en.png)
 
 The benefit was reusable interfaces for drivers, transforms, recording, visualisation, and navigation. The corresponding risk was that general-purpose navigation components still had to remain stable on this small field, around short-range obstacles, and with this vehicle's sensor noise. The later iterations were driven by that risk.
 
