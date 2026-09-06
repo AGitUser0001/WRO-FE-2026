@@ -4,8 +4,58 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import cast
 
 import numpy as np
+from scipy.ndimage import find_objects, label, maximum_filter
+
+
+def inscribed_obstacle_mask(mask: np.ndarray) -> np.ndarray:
+    if not bool(mask.any()):
+        return mask.copy()
+    components, count = cast(
+        tuple[np.ndarray, int],
+        label(mask, structure=np.ones((3, 3), dtype=np.uint8)),
+    )
+    result = np.zeros_like(mask, dtype=np.bool_)
+    for component, bounds in enumerate(find_objects(components), start=1):
+        if bounds is None:
+            continue
+        row_slice, col_slice = bounds
+        component_mask = components[row_slice, col_slice] == component
+        rows, cols = np.nonzero(component_mask)
+        height, width = component_mask.shape
+        aspect = max(height, width) / max(1, min(height, width))
+        if height > 6 or width > 6 or aspect > 3.0 or len(rows) > 24:
+            continue
+        r0 = int(row_slice.start or 0)
+        c0 = int(col_slice.start or 0)
+        sizes = np.zeros(component_mask.shape, dtype=np.int16)
+        for row in range(component_mask.shape[0]):
+            for col in range(component_mask.shape[1]):
+                if not component_mask[row, col]:
+                    continue
+                if row == 0 or col == 0:
+                    sizes[row, col] = 1
+                else:
+                    sizes[row, col] = 1 + min(
+                        sizes[row - 1, col],
+                        sizes[row, col - 1],
+                        sizes[row - 1, col - 1],
+                    )
+        side = int(sizes.max())
+        ends = np.argwhere(sizes == side)
+        centroid = np.asarray((
+            float((rows + r0).mean() - r0),
+            float((cols + c0).mean() - c0),
+        ))
+        centers = ends.astype(np.float32) - (side - 1) * 0.5
+        end_row, end_col = ends[int(np.argmin(np.sum((centers - centroid) ** 2, axis=1)))]
+        result[
+            r0 + int(end_row) - side + 1 : r0 + int(end_row) + 1,
+            c0 + int(end_col) - side + 1 : c0 + int(end_col) + 1,
+        ] = True
+    return result
 
 
 class Cell(IntEnum):
@@ -53,7 +103,15 @@ class GridMap:
         self.wall_score = np.zeros_like(self.cells, dtype=np.float32)
         self.unknown_score = np.zeros_like(self.cells, dtype=np.float32)
         self.live_mask = np.zeros_like(self.cells, dtype=np.bool_)
+        coordinates = (np.arange(self.size_cells, dtype=np.float32) - self.origin_cell) * self.resolution_m
+        self._world_x = np.broadcast_to(coordinates, self.cells.shape)
+        self._world_y = np.broadcast_to(-coordinates[:, None], self.cells.shape)
         self.direction = Direction.UNKNOWN
+        self._wall_near_direction: Direction | None = None
+        self._wall_near_mask: np.ndarray | None = None
+        self._physical_inside_direction: Direction | None = None
+        self._physical_inside: np.ndarray | None = None
+        self._physical_bounds: tuple[int, int, int, int] | None = None
         self.corridor_width_m = corridor_width_m
         self.corridor_length_m = corridor_length_m
         self.map_initial_overlapping_candidates()
@@ -115,6 +173,7 @@ class GridMap:
         self.live_mask.fill(False)
         self.direction = direction
         self._draw_direction_box(direction)
+        self._refresh_cells_from_scores()
 
     def lock_direction(self, direction: Direction | int) -> None:
         direction = Direction(direction)
@@ -169,40 +228,114 @@ class GridMap:
         add_alpha = max(0.0, min(add_alpha, 1.0))
         erode_alpha = max(0.0, min(erode_alpha, 1.0))
         self.live_mask.fill(False)
+        self.unknown_score *= 1.0 - erode_alpha
 
-        for row, col, value in local.observed_cells():
-            lx, ly = local.cell_to_local(row, col)
-            gx = pose_x_m + lx * cy - ly * sy
-            gy = pose_y_m + lx * sy + ly * cy
-            idx = self.world_to_cell(gx, gy)
-            if idx is None:
-                continue
-            if not self._inside_map_bounds(gx, gy):
-                if self.cells[idx] != int(Cell.MAP_WALL):
-                    self.wall_score[idx] = 0.0
-                    self.unknown_score[idx] = 0.0
-                    self.cells[idx] = int(Cell.FREE)
-                continue
-            if value != Cell.FREE:
-                self.live_mask[idx] = True
-            if value == Cell.MAP_WALL:
-                self.wall_score[idx] = 1.0
-                self.unknown_score[idx] = self._blend(self.unknown_score[idx], 0.0, erode_alpha)
-            elif value == Cell.WALL:
-                self.wall_score[idx] = 0.0
-                self.unknown_score[idx] = self._blend(self.unknown_score[idx], 0.0, erode_alpha)
-            elif value in (Cell.UNKNOWN_OBSTRUCTION, Cell.LIVE_OBSTACLE):
-                r0 = max(0, idx[0] - 1); r1 = min(self.size_cells, idx[0] + 2)
-                c0 = max(0, idx[1] - 1); c1 = min(self.size_cells, idx[1] + 2)
-                patch = self.unknown_score[r0:r1, c0:c1]
-                self.unknown_score[r0:r1, c0:c1] = np.maximum(patch, patch * (1.0 - add_alpha * 0.75) + add_alpha * 0.75)
-                self.unknown_score[idx] = self._blend(self.unknown_score[idx], 1.0, add_alpha)
-                self.wall_score[idx] = self._blend(self.wall_score[idx], 0.0, erode_alpha)
-            else:
-                self.wall_score[idx] = self._blend(self.wall_score[idx], 0.0, erode_alpha)
-                self.unknown_score[idx] = self._blend(self.unknown_score[idx], 0.0, erode_alpha)
+        local_rows, local_cols = np.nonzero(local.observed)
+        if not len(local_rows):
+            self._refresh_cells_from_scores()
+            return
+        local_x = (local.origin_cell - local_rows.astype(np.float64)) * local.resolution_m
+        local_y = (local_cols.astype(np.float64) - local.origin_cell) * local.resolution_m
+        global_x = pose_x_m + local_x * cy - local_y * sy
+        global_y = pose_y_m + local_x * sy + local_y * cy
+        cols = np.rint(global_x / self.resolution_m).astype(np.intp) + self.origin_cell
+        rows = self.origin_cell - np.rint(global_y / self.resolution_m).astype(np.intp)
+        on_grid = (
+            (rows >= 0) & (rows < self.size_cells)
+            & (cols >= 0) & (cols < self.size_cells)
+        )
+        local_rows = local_rows[on_grid]
+        local_cols = local_cols[on_grid]
+        global_x = global_x[on_grid]
+        global_y = global_y[on_grid]
+        rows = rows[on_grid]
+        cols = cols[on_grid]
+        values = local.cells[local_rows, local_cols]
+
+        half_w = self.corridor_width_m * 0.5
+        if self.direction == Direction.LEFT:
+            x_min, x_max = -2.5, half_w
+        elif self.direction == Direction.RIGHT:
+            x_min, x_max = -half_w, 2.5
+        else:
+            x_min, x_max = -half_w, half_w
+        navigable = (global_x >= x_min) & (global_x <= x_max)
+        if self.direction != Direction.UNKNOWN:
+            center_x = (x_min + x_max) * 0.5
+            navigable &= (global_y >= -1.5) & (global_y <= 1.5)
+            navigable &= ~(
+                (global_x > center_x - 0.5) & (global_x < center_x + 0.5)
+                & (global_y > -0.5) & (global_y < 0.5)
+            )
+
+        if (
+            self._wall_near_mask is None
+            or self._wall_near_direction != self.direction
+        ):
+            self._wall_near_mask = np.asarray(maximum_filter(
+                self.cells == int(Cell.MAP_WALL),
+                size=5,
+                mode="constant",
+                cval=0,
+            ), dtype=np.bool_)
+            self._wall_near_direction = self.direction
+        wall_near = self._wall_near_mask
+        flat = rows * self.size_cells + cols
+        map_wall = self.cells[rows, cols] == int(Cell.MAP_WALL)
+        outside = ~navigable & ~map_wall
+        local_wall = navigable & (values == int(Cell.MAP_WALL))
+        fitted_wall = navigable & (values == int(Cell.WALL))
+        dynamic = navigable & (
+            (values == int(Cell.UNKNOWN_OBSTRUCTION))
+            | (values == int(Cell.LIVE_OBSTACLE))
+        )
+        dynamic_clear = dynamic & ~wall_near[rows, cols]
+        dynamic_wall = dynamic & ~dynamic_clear
+        free = navigable & ~(local_wall | fitted_wall | dynamic)
+
+        np.logical_or.at(self.live_mask.ravel(), flat[dynamic_clear], True)
+        self.cells[rows[outside], cols[outside]] = int(Cell.FREE)
+
+        wall_mul = np.ones(len(flat), dtype=np.float32)
+        wall_add = np.zeros(len(flat), dtype=np.float32)
+        unknown_mul = np.ones(len(flat), dtype=np.float32)
+        unknown_add = np.zeros(len(flat), dtype=np.float32)
+        erode = np.float32(1.0 - erode_alpha)
+
+        reset_wall = outside | fitted_wall
+        wall_mul[reset_wall] = 0.0
+        wall_mul[local_wall] = 0.0
+        wall_add[local_wall] = 1.0
+        wall_mul[dynamic_clear | free] = erode
+
+        unknown_mul[outside | dynamic_wall] = 0.0
+        unknown_mul[local_wall | fitted_wall | free] = erode
+        unknown_mul[dynamic_clear] = np.float32(1.0 - add_alpha)
+        unknown_add[dynamic_clear] = np.float32(add_alpha)
+
+        order = np.argsort(flat, kind="stable")
+        sorted_flat = flat[order]
+        starts = np.r_[0, np.flatnonzero(np.diff(sorted_flat)) + 1]
+        occurrence = np.arange(len(flat)) - np.repeat(starts, np.diff(np.r_[starts, len(flat)]))
+        occurrence_in_input_order = np.empty_like(occurrence)
+        occurrence_in_input_order[order] = occurrence
+        wall_flat = self.wall_score.ravel()
+        unknown_flat = self.unknown_score.ravel()
+        for rank in range(int(occurrence.max(initial=-1)) + 1):
+            selected = occurrence_in_input_order == rank
+            indices = flat[selected]
+            wall_flat[indices] = wall_flat[indices] * wall_mul[selected] + wall_add[selected]
+            unknown_flat[indices] = (
+                unknown_flat[indices] * unknown_mul[selected] + unknown_add[selected]
+            )
 
         self._refresh_cells_from_scores()
+
+    def _near_map_wall(self, idx: tuple[int, int], radius: int) -> bool:
+        row, col = idx
+        r0 = max(0, row - radius); r1 = min(self.size_cells, row + radius + 1)
+        c0 = max(0, col - radius); c1 = min(self.size_cells, col + radius + 1)
+        return bool((self.cells[r0:r1, c0:c1] == int(Cell.MAP_WALL)).any())
 
     def nearest_alignment_vector(
         self,
@@ -256,38 +389,80 @@ class GridMap:
 
     def _refresh_cells_from_scores(self) -> None:
         self._clear_dynamic_outside_map_bounds()
-        dynamic = self.cells != int(Cell.MAP_WALL)
-        wall_mask = dynamic & (self.wall_score >= 0.55)
-        obs_mask = dynamic & (self.unknown_score >= 0.55) & ~wall_mask
+        physical_inside, bounds = self._physical_map_region()
+        row0, row1, col0, col1 = bounds
+        region = (slice(row0, row1), slice(col0, col1))
+        local_cells = self.cells[region]
+        dynamic = physical_inside[region] & (local_cells != int(Cell.MAP_WALL))
+        wall_mask = dynamic & (self.wall_score[region] >= 0.55)
+        obs_mask = inscribed_obstacle_mask(
+            dynamic & (self.unknown_score[region] >= 0.55) & ~wall_mask,
+        )
         free_mask = dynamic & ~wall_mask & ~obs_mask
-        self.cells[free_mask] = int(Cell.FREE)
-        self.cells[wall_mask] = int(Cell.WALL)
-        self.cells[obs_mask] = int(Cell.UNKNOWN_OBSTRUCTION)
+        local_cells[free_mask] = int(Cell.FREE)
+        local_cells[wall_mask] = int(Cell.WALL)
+        local_cells[obs_mask] = int(Cell.UNKNOWN_OBSTRUCTION)
 
-    @staticmethod
-    def _blend(old: float, new: float, alpha: float) -> float:
-        return old * (1.0 - alpha) + new * alpha
-
-    def _inside_map_bounds(self, x_m: float, y_m: float) -> bool:
+    def inside_navigable_bounds(self, x_m: float, y_m: float) -> bool:
         if not -1.5 <= y_m <= 1.5:
             return False
         half_w = self.corridor_width_m * 0.5
         if self.direction == Direction.LEFT:
-            return -2.5 <= x_m <= half_w
+            inside = -2.5 <= x_m <= half_w
+            center_x = (-2.5 + half_w) * 0.5
+            return inside and not (center_x - 0.5 < x_m < center_x + 0.5 and -0.5 < y_m < 0.5)
         if self.direction == Direction.RIGHT:
-            return -half_w <= x_m <= 2.5
-        return -2.5 <= x_m <= 2.5
+            inside = -half_w <= x_m <= 2.5
+            center_x = (-half_w + 2.5) * 0.5
+            return inside and not (center_x - 0.5 < x_m < center_x + 0.5 and -0.5 < y_m < 0.5)
+        return -half_w <= x_m <= half_w and -1.5 <= y_m <= 1.5
 
     def _clear_dynamic_outside_map_bounds(self) -> None:
-        rows, cols = np.nonzero((self.wall_score > 0.0) | (self.unknown_score > 0.0))
-        for row, col in zip(rows, cols):
-            x_m, y_m = self.cell_to_world(int(row), int(col))
-            if self._inside_map_bounds(x_m, y_m):
-                continue
-            self.wall_score[row, col] = 0.0
-            self.unknown_score[row, col] = 0.0
-            if self.cells[row, col] != int(Cell.MAP_WALL):
-                self.cells[row, col] = int(Cell.FREE)
+        physical_inside, _bounds = self._physical_map_region()
+        outside = ~physical_inside
+        self.wall_score[outside] = 0.0
+        self.unknown_score[outside] = 0.0
+
+        cleared = (
+            (self.cells != int(Cell.MAP_WALL))
+            & (self.wall_score <= 0.0)
+            & (self.unknown_score <= 0.0)
+        )
+        self.cells[cleared] = int(Cell.FREE)
+
+    def _physical_map_region(
+        self,
+    ) -> tuple[np.ndarray, tuple[int, int, int, int]]:
+        if (
+            self._physical_inside is not None
+            and self._physical_bounds is not None
+            and self._physical_inside_direction == self.direction
+        ):
+            return self._physical_inside, self._physical_bounds
+        half_w = self.corridor_width_m * 0.5
+        y_inside = (self._world_y >= -1.5) & (self._world_y <= 1.5)
+        if self.direction == Direction.LEFT:
+            x_min, x_max = -2.5, half_w
+        elif self.direction == Direction.RIGHT:
+            x_min, x_max = -half_w, 2.5
+        else:
+            x_min, x_max = -half_w, half_w
+        physical_inside = y_inside & (self._world_x >= x_min) & (self._world_x <= x_max)
+        if self.direction != Direction.UNKNOWN:
+            center_x = (x_min + x_max) * 0.5
+            physical_inside &= ~(
+                (self._world_x > center_x - 0.5) & (self._world_x < center_x + 0.5)
+                & (self._world_y > -0.5) & (self._world_y < 0.5)
+            )
+        rows, cols = np.nonzero(physical_inside)
+        bounds = (
+            int(rows.min()), int(rows.max()) + 1,
+            int(cols.min()), int(cols.max()) + 1,
+        )
+        self._physical_inside_direction = self.direction
+        self._physical_inside = physical_inside
+        self._physical_bounds = bounds
+        return physical_inside, bounds
 
     def _set_segment(
         self,
@@ -304,22 +479,6 @@ class GridMap:
             idx = self.world_to_cell(x, y)
             if idx is not None:
                 self._write_cell(idx, value)
-
-    def _set_rect(
-        self,
-        x0: float,
-        y0: float,
-        x1: float,
-        y1: float,
-        value: Cell,
-    ) -> None:
-        lo_x, hi_x = sorted((x0, x1))
-        lo_y, hi_y = sorted((y0, y1))
-        for x in np.arange(lo_x, hi_x + self.resolution_m * 0.5, self.resolution_m):
-            for y in np.arange(lo_y, hi_y + self.resolution_m * 0.5, self.resolution_m):
-                idx = self.world_to_cell(float(x), float(y))
-                if idx is not None:
-                    self._write_cell(idx, value)
 
     def _clear_rect(self, x0: float, y0: float, x1: float, y1: float) -> None:
         lo_x, hi_x = sorted((x0, x1))

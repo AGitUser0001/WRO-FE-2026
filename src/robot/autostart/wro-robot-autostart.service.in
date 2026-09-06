@@ -1,0 +1,17 @@
+[Unit]
+Description=WRO robot agent and start button
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Environment=HOME=@HOME@
+SupplementaryGroups=gpio
+ExecStart=/bin/bash -lic "exec /usr/local/lib/wro-robot-autostart/run_robot_autostart.sh"
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,5 @@
+{
+  "red": ["right"],
+  "green": ["left"],
+  "yellow": ["left", "u_turn", "left"]
+}

@@ -18,6 +18,6 @@ else
     echo "No imu workspace found"
     exit 1
 fi
-cd ~/wro_ign_gazebo_sim && source install/setup.bash
+cd ~/robot_ws && source install/setup.bash
 cd ~/microros_ws && source install/setup.bash
-cd ~/wro_ign_gazebo_sim
+cd ~/robot_ws

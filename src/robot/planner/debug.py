@@ -7,8 +7,9 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
+from .camera_color import OBSTACLE_COLORS_BGR
 from .grid import Cell, GridMap, LocalGrid
-from .localize import PoseEstimate
+from .localize_types import PoseEstimate
 from .planner import Plan
 from .sensors import SensorFrame
 
@@ -25,6 +26,7 @@ class DebugFrame:
     plan: Plan | None = None
     local_grid: LocalGrid | None = None
     sensor_frame: SensorFrame | None = None
+    colored_obstacles: tuple[tuple[str, tuple[float, float]], ...] = ()
     status_lines: tuple[str, ...] = ()
 
 
@@ -51,11 +53,13 @@ class DebugStyle:
 
 
 class DebugWindow:
+    _obstacle_colors = OBSTACLE_COLORS_BGR
+
     def __init__(
         self,
         name: str = "wro grid planner",
         style: DebugStyle = DebugStyle(),
-        robot_length_m: float = 0.25,
+        robot_length_m: float = 0.22,
         robot_width_m: float = 0.15,
     ):
         self.name = name
@@ -63,6 +67,9 @@ class DebugWindow:
         self.robot_length_m = robot_length_m
         self.robot_width_m = robot_width_m
         self.imshow_failed = False
+        self._cell_colors = np.full((256, 3), style.grid_free, dtype=np.uint8)
+        for value in Cell:
+            self._cell_colors[int(value)] = self._cell_color(value)
 
     def render(self, frame: DebugFrame) -> Image:
         style = self.style
@@ -79,6 +86,7 @@ class DebugWindow:
                 frame.sensor_frame.local_grid,
                 frame.pose,
             )
+        self._draw_colored_obstacles(image, frame.grid, frame.colored_obstacles)
         self._draw_pose(image, frame.grid, frame.pose)
         if frame.plan is not None:
             self._draw_plan(image, frame.grid, frame.plan)
@@ -121,25 +129,16 @@ class DebugWindow:
             style.grid_free,
             -1,
         )
-        cell_px = max(
-            1,
-            int(
-                (style.map_size_px - style.margin_px * 2)
-                / max(grid.size_cells - 1, 1)
-            ),
+        snapshot = grid.cells.copy()
+        colored = self._cell_colors[snapshot]
+        map_span_px = style.map_size_px - style.margin_px * 2 + 1
+        raster = cv2.resize(
+            colored,
+            (map_span_px, map_span_px),
+            interpolation=cv2.INTER_NEAREST,
         )
-        for row, col, value in self._interesting_cells(grid):
-            x_m, y_m = grid.cell_to_world(row, col)
-            color = self._cell_color(value)
-            cx, cy = self._pix(grid, x_m, y_m)
-            half = max(1, cell_px // 2)
-            cv2.rectangle(
-                image,
-                (cx - half, cy - half),
-                (cx + half, cy + half),
-                color,
-                -1,
-            )
+        lo = style.margin_px
+        image[lo : lo + map_span_px, lo : lo + map_span_px] = raster
         ox, oy = self._pix(grid, 0.0, 0.0)
         cv2.drawMarker(image, (ox, oy), style.origin, cv2.MARKER_CROSS, 18, 2)
 
@@ -167,12 +166,29 @@ class DebugWindow:
             for lx, ly in corners
         )
         self._draw_polyline(image, grid, world, self.style.local_bounds, 1, True)
-        for row, col, value in local.observed_cells():
-            lx, ly = local.cell_to_local(row, col)
-            x_m = pose.x_m + lx * cyaw - ly * syaw
-            y_m = pose.y_m + lx * syaw + ly * cyaw
-            color = self.style.local_observed if value == Cell.FREE else self._cell_color(value)
-            cv2.circle(image, self._pix(grid, x_m, y_m), 1, color, -1)
+        rows, cols = np.nonzero(local.observed)
+        if len(rows) == 0:
+            return
+        lx = (local.origin_cell - rows) * local.resolution_m
+        ly = (cols - local.origin_cell) * local.resolution_m
+        world_x = pose.x_m + lx * cyaw - ly * syaw
+        world_y = pose.y_m + lx * syaw + ly * cyaw
+        span = grid.spec.half_extent_m * 2.0
+        scale = (self.style.map_size_px - self.style.margin_px * 2) / max(span, 0.01)
+        px = np.rint(self.style.map_size_px * 0.5 + world_x * scale).astype(np.int32)
+        py = np.rint(self.style.map_size_px * 0.5 - world_y * scale).astype(np.int32)
+        values = local.cells[rows, cols]
+        colors = self._cell_colors[values].copy()
+        colors[values == int(Cell.FREE)] = self.style.local_observed
+        valid = (
+            (px >= 1)
+            & (px < self.style.map_size_px - 1)
+            & (py >= 1)
+            & (py < self.style.map_size_px - 1)
+        )
+        px, py, colors = px[valid], py[valid], colors[valid]
+        for dx, dy in ((0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)):
+            image[py + dy, px + dx] = colors
 
     def _draw_plan(self, image: Image, grid: GridMap, plan: Plan) -> None:
         self._draw_polyline(image, grid, plan.waypoints, self.style.path, 2, False)
@@ -194,9 +210,27 @@ class DebugWindow:
         if plan.target is not None:
             cv2.circle(image, self._pix(grid, plan.target[0], plan.target[1]), 7, self.style.target, -1)
 
+    def _draw_colored_obstacles(
+        self,
+        image: Image,
+        grid: GridMap,
+        obstacles: tuple[tuple[str, tuple[float, float]], ...],
+    ) -> None:
+        half_size_m = 0.025
+        for label, (x_m, y_m) in obstacles:
+            color = self._obstacle_colors.get(label)
+            if color is None:
+                continue
+            top_left = self._pix(grid, x_m - half_size_m, y_m + half_size_m)
+            bottom_right = self._pix(grid, x_m + half_size_m, y_m - half_size_m)
+            cv2.rectangle(image, top_left, bottom_right, color, -1)
+            cv2.rectangle(image, top_left, bottom_right, (25, 25, 25), 1)
+
     def _draw_pose(self, image: Image, grid: GridMap, pose: PoseEstimate) -> None:
         px = self._pix(grid, pose.x_m, pose.y_m)
-        footprint = self._robot_footprint(pose)
+        footprint = self._robot_footprint(pose, 0.0)
+        planning_footprint = self._robot_footprint(pose, 0.03)
+        self._draw_polyline(image, grid, planning_footprint, (0, 170, 255), 2, True)
         cv2.fillConvexPoly(
             image,
             np.array([self._pix(grid, x_m, y_m) for x_m, y_m in footprint], dtype=np.int32),
@@ -211,9 +245,9 @@ class DebugWindow:
         radius = int(12 + 18 * max(0.0, min(pose.confidence, 1.0)))
         cv2.circle(image, px, radius, self.style.pose, 1)
 
-    def _robot_footprint(self, pose: PoseEstimate) -> tuple[tuple[float, float], ...]:
-        half_l = self.robot_length_m * 0.5
-        half_w = self.robot_width_m * 0.5
+    def _robot_footprint(self, pose: PoseEstimate, margin_m: float) -> tuple[tuple[float, float], ...]:
+        half_l = self.robot_length_m * 0.5 + margin_m
+        half_w = self.robot_width_m * 0.5 + margin_m
         local = ((half_l, half_w), (half_l, -half_w), (-half_l, -half_w), (-half_l, half_w))
         cy = math.cos(pose.yaw_rad)
         sy = math.sin(pose.yaw_rad)
@@ -317,20 +351,11 @@ class DebugWindow:
     ) -> None:
         if len(points) < 2:
             return
-        for a, b in zip(points, points[1:]):
-            cv2.line(image, self._pix(grid, a[0], a[1]), self._pix(grid, b[0], b[1]), color, thickness)
-        if closed:
-            a = points[-1]
-            b = points[0]
-            cv2.line(image, self._pix(grid, a[0], a[1]), self._pix(grid, b[0], b[1]), color, thickness)
-
-    def _interesting_cells(self, grid: GridMap) -> tuple[tuple[int, int, Cell], ...]:
-        cells = []
-        snapshot = grid.cells.copy()
-        rows, cols = np.nonzero(snapshot)
-        for row, col in zip(rows.tolist(), cols.tolist()):
-            cells.append((row, col, Cell(int(snapshot[row, col]))))
-        return tuple(cells)
+        pixels = np.asarray(
+            [self._pix(grid, point[0], point[1]) for point in points],
+            dtype=np.int32,
+        )
+        cv2.polylines(image, [pixels], closed, color, thickness)
 
     def _cell_color(self, value: Cell) -> Color:
         if value == Cell.MAP_WALL:

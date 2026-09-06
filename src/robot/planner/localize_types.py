@@ -25,3 +25,9 @@ class PoseEstimate:
     wall_pose_sources: int = 0
     wall_yaw_correction_rad: float = 0.0
     wall_yaw_sources: int = 0
+    scan_motion_correction_x_m: float = 0.0
+    scan_motion_correction_y_m: float = 0.0
+    scan_motion_score: float = 0.0
+    odometry_motion_m: float = 0.0
+    odometry_travel_m: float = 0.0
+    odometry_speed_mps: float = 0.0

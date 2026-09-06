@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from typing import Iterable
 
+import numpy as np
+from scipy.ndimage import convolve
 from sensor_msgs.msg import Imu, LaserScan
 
 from .grid import Cell, LocalGrid
@@ -55,6 +57,7 @@ class SensorFrame:
     points: tuple[ScanPoint, ...]
     wall_distances: WallDistances
     front_wall: FrontWallEstimate = FrontWallEstimate()
+    rear_wall: FrontWallEstimate = FrontWallEstimate()
     left_wall: SideWallEstimate = SideWallEstimate()
     right_wall: SideWallEstimate = SideWallEstimate()
     imu: ImuReading | None = None
@@ -96,24 +99,19 @@ def scan_points_from_msg(
     min_range_m: float = 0.05,
     stride: int = 1,
 ) -> tuple[ScanPoint, ...]:
-    points = []
     msg_min = max(float(getattr(msg, "range_min", min_range_m)), min_range_m)
     msg_max = min(float(getattr(msg, "range_max", max_range_m)), max_range_m)
     stride = max(1, stride)
-    for i in range(0, len(msg.ranges), stride):
-        rng = float(msg.ranges[i])
-        if not math.isfinite(rng) or rng < msg_min or rng > msg_max:
-            continue
-        angle = float(msg.angle_min) + i * float(msg.angle_increment)
-        points.append(
-            ScanPoint(
-                x_m=rng * math.cos(angle),
-                y_m=rng * math.sin(angle),
-                range_m=rng,
-                angle_rad=angle,
-            )
-        )
-    return tuple(points)
+    ranges = np.asarray(msg.ranges, dtype=np.float64)[::stride]
+    valid = np.isfinite(ranges) & (ranges >= msg_min) & (ranges <= msg_max)
+    angles = float(msg.angle_min) + np.flatnonzero(valid) * stride * float(msg.angle_increment)
+    ranges = ranges[valid]
+    x_m = ranges * np.cos(angles)
+    y_m = ranges * np.sin(angles)
+    return tuple(
+        ScanPoint(x, y, distance, angle)
+        for x, y, distance, angle in zip(x_m.tolist(), y_m.tolist(), ranges.tolist(), angles.tolist())
+    )
 
 
 def wall_distances_from_points(points: Iterable[ScanPoint]) -> WallDistances:
@@ -173,6 +171,20 @@ def front_wall_from_points(
         point_count=len(inliers),
         valid=True,
     )
+
+
+def rear_wall_from_points(points: Iterable[ScanPoint]) -> FrontWallEstimate:
+    candidates = [
+        point for point in points
+        if point.x_m < -0.08 and abs(point.y_m) < min(0.45, -0.8 * point.x_m)
+    ]
+    if len(candidates) < 7:
+        return FrontWallEstimate()
+    distance = float(np.median([-point.x_m for point in candidates]))
+    inliers = [point for point in candidates if abs(-point.x_m - distance) < 0.035]
+    if len(inliers) < 7 or max(point.y_m for point in inliers) - min(point.y_m for point in inliers) < 0.16:
+        return FrontWallEstimate()
+    return FrontWallEstimate(distance_m=distance, point_count=len(inliers), valid=True)
 
 
 def side_wall_from_points(
@@ -242,24 +254,56 @@ def local_grid_from_scan(
     )
     walls = wall_distances_from_points(points)
     front_wall = front_wall_from_points(points)
+    rear_wall = rear_wall_from_points(points)
     left_wall = side_wall_from_points(points, "left")
     right_wall = side_wall_from_points(points, "right")
     local = LocalGrid(size_m=size_m, resolution_m=resolution_m)
     _ = wall_margin_m
-    endpoints = [
-        (point.x_m, point.y_m, Cell.UNKNOWN_OBSTRUCTION)
+    local.mark_free_rays(
+        (point.x_m, point.y_m)
         for point in points
         if abs(point.x_m) <= size_m * 0.5 and abs(point.y_m) <= size_m * 0.5
-    ]
-    local.mark_lidar_points(endpoints)
+    )
+    endpoints = _supported_endpoints(local, points, size_m)
+    for x_m, y_m, endpoint_value in endpoints:
+        local.mark_scan_points(((x_m, y_m),), endpoint_value)
     mark_wall_runs(local, points, front_wall, left_wall, right_wall)
     return SensorFrame(
         local_grid=local,
         points=points,
         wall_distances=walls,
         front_wall=front_wall,
+        rear_wall=rear_wall,
         left_wall=left_wall,
         right_wall=right_wall,
+    )
+
+
+def _supported_endpoints(
+    local: LocalGrid,
+    points: tuple[ScanPoint, ...],
+    size_m: float,
+) -> tuple[tuple[float, float, Cell], ...]:
+    if not points:
+        return ()
+    xy = np.asarray([(point.x_m, point.y_m) for point in points], dtype=np.float64)
+    xy = xy[np.all(np.abs(xy) <= size_m * 0.5, axis=1)]
+    rows = local.origin_cell - np.rint(xy[:, 0] / local.resolution_m).astype(np.intp)
+    cols = local.origin_cell + np.rint(xy[:, 1] / local.resolution_m).astype(np.intp)
+    inside = (rows >= 0) & (rows < local.size_cells) & (cols >= 0) & (cols < local.size_cells)
+    indices = rows[inside] * local.size_cells + cols[inside]
+    xy = xy[inside]
+    counts = np.bincount(indices, minlength=local.cells.size)
+    support = np.asarray(convolve(
+        counts.reshape(local.cells.shape), np.ones((3, 3), dtype=np.int64), mode="constant",
+    ), dtype=np.int64).ravel()
+    supported = (counts > 0) & (support >= 2)
+    x_sum = np.bincount(indices, weights=xy[:, 0], minlength=local.cells.size)
+    y_sum = np.bincount(indices, weights=xy[:, 1], minlength=local.cells.size)
+    return tuple(
+        (x, y, Cell.UNKNOWN_OBSTRUCTION)
+        for x, y in zip((x_sum[supported] / counts[supported]).tolist(),
+                        (y_sum[supported] / counts[supported]).tolist())
     )
 
 
@@ -270,32 +314,26 @@ def mark_wall_runs(
     left_wall: SideWallEstimate,
     right_wall: SideWallEstimate,
 ) -> None:
-    if front_wall.valid:
-        mark_point_run(local, points, lambda p: p.x_m >= 0.0 and abs(p.x_m - (front_wall.distance_m + front_wall.slope * p.y_m)) <= 0.06)
-    if left_wall.valid:
-        mark_point_run(local, points, lambda p: p.y_m >= 0.0 and abs(p.y_m - (left_wall.distance_m + left_wall.slope * p.x_m)) <= 0.06)
-    if right_wall.valid:
-        mark_point_run(local, points, lambda p: p.y_m <= 0.0 and abs(p.y_m - (-right_wall.distance_m + right_wall.slope * p.x_m)) <= 0.06)
-
-
-def mark_point_run(
-    local: LocalGrid,
-    points: tuple[ScanPoint, ...],
-    matches_wall: Callable[[ScanPoint], bool],
-    min_points: int = 6,
-    min_span_m: float = 0.22,
-) -> None:
-    run: list[ScanPoint] = []
-    for point in (*points, ScanPoint(math.inf, math.inf, math.inf, math.inf)):
-        if matches_wall(point):
-            run.append(point)
+    if not points or not (front_wall.valid or left_wall.valid or right_wall.valid):
+        return
+    x = np.asarray([p.x_m for p in points], dtype=np.float64)
+    y = np.asarray([p.y_m for p in points], dtype=np.float64)
+    wall_points = np.zeros(len(points), dtype=np.bool_)
+    for valid, matches in (
+        (front_wall.valid, (x >= 0.0) & (np.abs(x - (front_wall.distance_m + front_wall.slope * y)) <= 0.10)),
+        (left_wall.valid, (y >= 0.0) & (np.abs(y - (left_wall.distance_m + left_wall.slope * x)) <= 0.10)),
+        (right_wall.valid, (y <= 0.0) & (np.abs(y - (-right_wall.distance_m + right_wall.slope * x)) <= 0.10)),
+    ):
+        if not valid:
             continue
-        if len(run) >= min_points and _run_span(run) >= min_span_m:
-            local.mark_scan_points(((p.x_m, p.y_m) for p in run), Cell.WALL)
-        run = []
-
-
-def _run_span(points: list[ScanPoint]) -> float:
-    first = points[0]
-    last = points[-1]
-    return math.hypot(last.x_m - first.x_m, last.y_m - first.y_m)
+        indices = np.flatnonzero(matches)
+        if len(indices) < 6:
+            continue
+        starts = np.r_[0, np.flatnonzero(np.diff(indices) > 3) + 1]
+        ends = np.r_[starts[1:], len(indices)] - 1
+        counts = ends - starts + 1
+        span = np.hypot(x[indices[ends]] - x[indices[starts]],
+                        y[indices[ends]] - y[indices[starts]])
+        accepted = (counts >= 6) & (span >= 0.22)
+        wall_points[indices[np.repeat(accepted, counts)]] = True
+    local.mark_scan_points(zip(x[wall_points].tolist(), y[wall_points].tolist()), Cell.WALL)

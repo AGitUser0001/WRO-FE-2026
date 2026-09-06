@@ -72,6 +72,30 @@ class LocalGrid:
                 self.cells[idx] = int(value)
                 self.observed[idx] = True
 
+    def mark_free_rays(
+        self,
+        points: Iterable[tuple[float, float]],
+        value: Cell = Cell.FREE,
+    ) -> None:
+        coordinates = np.asarray(tuple(points), dtype=np.float64)
+        if not len(coordinates):
+            return
+        lengths = np.hypot(coordinates[:, 0], coordinates[:, 1])
+        steps = np.maximum(1, np.floor(lengths / self.resolution_m).astype(np.intp) - 1)
+        sample = np.arange(int(steps.max()) + 1, dtype=np.float64)
+        valid = sample[None, :] <= steps[:, None]
+        fraction = sample[None, :] / (steps[:, None] + 1)
+        x_m = coordinates[:, 0, None] * fraction
+        y_m = coordinates[:, 1, None] * fraction
+        rows = self.origin_cell - np.rint(x_m / self.resolution_m).astype(np.intp)
+        cols = np.rint(y_m / self.resolution_m).astype(np.intp) + self.origin_cell
+        valid &= (
+            (rows >= 0) & (rows < self.size_cells)
+            & (cols >= 0) & (cols < self.size_cells)
+        )
+        self.cells[rows[valid], cols[valid]] = int(value)
+        self.observed[rows[valid], cols[valid]] = True
+
     def mark_wall_line(
         self,
         a: tuple[float, float],

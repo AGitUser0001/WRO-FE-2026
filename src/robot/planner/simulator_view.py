@@ -19,13 +19,23 @@ class RobotView(Protocol):
     servo: int
 
 
+class ObstacleView(Protocol):
+    @property
+    def rect(self) -> tuple[float, float, float, float]: ...
+
+    @property
+    def color_bgr(self) -> tuple[int, int, int]: ...
+
+
 class SimulatorViewMixin:
     canvas_px: int
     command_timeout_s: float
     drag_aim: tuple[float, float] | None
     dragging: bool
     last_motor_command_time: float
+    obstacles: tuple[ObstacleView, ...]
     robot: RobotView
+    _segment_array: np.ndarray
     segments: tuple[Segment, ...]
     ui_scale: float
     window: str
@@ -42,10 +52,20 @@ class SimulatorViewMixin:
 
     def _pose_is_free(self, x_m: float, y_m: float, yaw_rad: float) -> bool: ...
 
-    def _raycast(self, local_angle_rad: float) -> float: ...
+    def _raycast_ranges(
+        self,
+        angles: np.ndarray,
+        segments: np.ndarray,
+        robot_x: float,
+        robot_y: float,
+        robot_yaw: float,
+    ) -> np.ndarray: ...
 
     def _draw(self) -> int:
         image = np.full((self.canvas_px, self.canvas_px, 3), 245, dtype=np.uint8)
+        for obstacle in self.obstacles:
+            x0, y0, x1, y1 = obstacle.rect
+            cv2.rectangle(image, self._pix(x0, y1), self._pix(x1, y0), obstacle.color_bgr, -1)
         for segment in self.segments:
             cv2.line(
                 image,
@@ -81,17 +101,25 @@ class SimulatorViewMixin:
         return cv2.waitKey(1) & 0xFF
 
     def _draw_lidar(self, image: np.ndarray) -> None:
-        for i in range(0, 361, 4):
-            angle = -math.pi + i * (2.0 * math.pi / 360.0)
-            if not self._lidar_angle_visible(angle):
-                continue
-            dist = self._raycast(angle)
+        robot_x = self.robot.x_m
+        robot_y = self.robot.y_m
+        robot_yaw = self.robot.yaw_rad
+        angles = np.linspace(-math.pi, math.pi, 91)
+        visible = np.fromiter(
+            (self._lidar_angle_visible(float(angle)) for angle in angles),
+            dtype=bool,
+            count=len(angles),
+        )
+        distances = self._raycast_ranges(
+            angles, self._segment_array, robot_x, robot_y, robot_yaw,
+        )
+        for angle, dist in zip(angles[visible], distances[visible]):
             if not math.isfinite(dist):
                 continue
-            forward = (math.cos(self.robot.yaw_rad), math.sin(self.robot.yaw_rad))
-            left = (-math.sin(self.robot.yaw_rad), math.cos(self.robot.yaw_rad))
-            wx = self.robot.x_m + dist * (forward[0] * math.cos(angle) + left[0] * math.sin(angle))
-            wy = self.robot.y_m + dist * (forward[1] * math.cos(angle) + left[1] * math.sin(angle))
+            forward = (math.cos(robot_yaw), math.sin(robot_yaw))
+            left = (-math.sin(robot_yaw), math.cos(robot_yaw))
+            wx = robot_x + dist * (forward[0] * math.cos(angle) + left[0] * math.sin(angle))
+            wy = robot_y + dist * (forward[1] * math.cos(angle) + left[1] * math.sin(angle))
             origin_px = self._pix(self.robot.x_m, self.robot.y_m)
             hit_px = self._pix(wx, wy)
             cv2.line(image, origin_px, hit_px, (185, 205, 220), self._thick(1))

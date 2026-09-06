@@ -8,43 +8,39 @@ from rclpy.node import Node
 @dataclass(frozen=True)
 class DriverConfig:
     scan_topic: str = "/scan"
+    odom_topic: str = "/wheel/odometry"
     imu_topic: str = "/imu_data"
     motor_topic: str = "/microROS/motor_control"
     servo_topic: str = "/microROS/servo_control"
+    camera_image_topic: str = "/camera/camera/color/image_raw"
+    camera_depth_topic: str = "/camera/camera/aligned_depth_to_color/image_raw"
+    color_obstacle_hold_s: float = 8.0
     drive_motor: int = 0
+    motor_deadband_command: int = 90
+    planning_motor_reference: int = 150
     max_servo: int = 320
-    grid_size_m: float = 8.0
+    grid_size_m: float = 6.0
     grid_resolution_m: float = 0.05
-    local_grid_size_m: float = 1.5
+    local_grid_size_m: float = 2.4
     lidar_max_range_m: float = 2.2
-    safety_buffer_m: float = 0.15
-    lookahead_m: float = 1.2
-    steer_kp: float = 500.0
     wheelbase_m: float = 0.138
-    max_steering_angle_rad: float = 0.4188
-    robot_length_m: float = 0.25
+    max_steering_angle_rad: float = 0.2531
+    robot_length_m: float = 0.22
     robot_width_m: float = 0.15
-    trajectory_steps: int = 100
-    trajectory_length_m: float = 1.5
     trajectory_step_m: float = 0.05
-    command_delay_s: float = 0.5
-    planning_speed_mps: float = 0.35
+    command_delay_s: float = 0.25
+    actuation_delay_s: float = 0.15
+    planning_speed_mps: float = 0.319
+    planning_accel_tau_s: float = 0.215
+    planning_decel_tau_s: float = 0.354
+    course_laps: int = 3
     start_yaw_rad: float = 1.5707963267948966
-    correction_alpha: float = 0.04
+    odometry_correction_max_m: float = 0.30
     fuse_add_alpha: float = 0.08
     fuse_erode_alpha: float = 0.02
-    front_wall_motion_alpha: float = 0.85
-    front_wall_motion_max_step_m: float = 0.12
-    front_wall_motion_min_points: int = 5
-    wall_pose_correction_alpha: float = 0.80
-    wall_pose_correction_max_step_m: float = 0.50
-    wall_pose_max_slope: float = 0.35
-    wall_yaw_correction_alpha: float = 0.0
-    wall_yaw_correction_max_step_rad: float = 0.05235987755982989
-    direction_lock_confirm_frames: int = 4
-    direction_lock_min_score_delta: float = 0.10
-    front_backup_distance_m: float = 0.26
-    reverse_hold_seconds: float = 0.8
+    direction_min_wall_points: int = 5
+    direction_lock_confirm_frames: int = 3
+    direction_lock_min_score_delta: float = 0.18
     tick_rate: float = 20.0
     auto_drive_enabled: bool = False
     debug_view_enabled: bool = False
@@ -53,43 +49,39 @@ class DriverConfig:
 
 PARAMETER_DEFAULTS: tuple[tuple[str, str | int | float | bool], ...] = (
     ("scan_topic", DriverConfig.scan_topic),
+    ("odom_topic", DriverConfig.odom_topic),
     ("imu_topic", DriverConfig.imu_topic),
     ("motor_topic", DriverConfig.motor_topic),
     ("servo_topic", DriverConfig.servo_topic),
+    ("camera_image_topic", DriverConfig.camera_image_topic),
+    ("camera_depth_topic", DriverConfig.camera_depth_topic),
+    ("color_obstacle_hold_s", DriverConfig.color_obstacle_hold_s),
     ("drive_motor", DriverConfig.drive_motor),
+    ("motor_deadband_command", DriverConfig.motor_deadband_command),
+    ("planning_motor_reference", DriverConfig.planning_motor_reference),
     ("max_servo", DriverConfig.max_servo),
     ("grid_size_m", DriverConfig.grid_size_m),
     ("grid_resolution_m", DriverConfig.grid_resolution_m),
     ("local_grid_size_m", DriverConfig.local_grid_size_m),
     ("lidar_max_range_m", DriverConfig.lidar_max_range_m),
-    ("safety_buffer_m", DriverConfig.safety_buffer_m),
-    ("lookahead_m", DriverConfig.lookahead_m),
-    ("steer_kp", DriverConfig.steer_kp),
     ("wheelbase_m", DriverConfig.wheelbase_m),
     ("max_steering_angle_rad", DriverConfig.max_steering_angle_rad),
     ("robot_length_m", DriverConfig.robot_length_m),
     ("robot_width_m", DriverConfig.robot_width_m),
-    ("trajectory_steps", DriverConfig.trajectory_steps),
-    ("trajectory_length_m", DriverConfig.trajectory_length_m),
     ("trajectory_step_m", DriverConfig.trajectory_step_m),
     ("command_delay_s", DriverConfig.command_delay_s),
+    ("actuation_delay_s", DriverConfig.actuation_delay_s),
     ("planning_speed_mps", DriverConfig.planning_speed_mps),
+    ("planning_accel_tau_s", DriverConfig.planning_accel_tau_s),
+    ("planning_decel_tau_s", DriverConfig.planning_decel_tau_s),
+    ("course_laps", DriverConfig.course_laps),
     ("start_yaw_rad", DriverConfig.start_yaw_rad),
-    ("correction_alpha", DriverConfig.correction_alpha),
+    ("odometry_correction_max_m", DriverConfig.odometry_correction_max_m),
     ("fuse_add_alpha", DriverConfig.fuse_add_alpha),
     ("fuse_erode_alpha", DriverConfig.fuse_erode_alpha),
-    ("front_wall_motion_alpha", DriverConfig.front_wall_motion_alpha),
-    ("front_wall_motion_max_step_m", DriverConfig.front_wall_motion_max_step_m),
-    ("front_wall_motion_min_points", DriverConfig.front_wall_motion_min_points),
-    ("wall_pose_correction_alpha", DriverConfig.wall_pose_correction_alpha),
-    ("wall_pose_correction_max_step_m", DriverConfig.wall_pose_correction_max_step_m),
-    ("wall_pose_max_slope", DriverConfig.wall_pose_max_slope),
-    ("wall_yaw_correction_alpha", DriverConfig.wall_yaw_correction_alpha),
-    ("wall_yaw_correction_max_step_rad", DriverConfig.wall_yaw_correction_max_step_rad),
+    ("direction_min_wall_points", DriverConfig.direction_min_wall_points),
     ("direction_lock_confirm_frames", DriverConfig.direction_lock_confirm_frames),
     ("direction_lock_min_score_delta", DriverConfig.direction_lock_min_score_delta),
-    ("front_backup_distance_m", DriverConfig.front_backup_distance_m),
-    ("reverse_hold_seconds", DriverConfig.reverse_hold_seconds),
     ("tick_rate", DriverConfig.tick_rate),
     ("auto_drive_enabled", DriverConfig.auto_drive_enabled),
     ("debug_view_enabled", DriverConfig.debug_view_enabled),
@@ -131,43 +123,39 @@ def declare_and_load_config(node: Node) -> DriverConfig:
 
     return DriverConfig(
         scan_topic=_str_param(node, "scan_topic"),
+        odom_topic=_str_param(node, "odom_topic"),
         imu_topic=_str_param(node, "imu_topic"),
         motor_topic=_str_param(node, "motor_topic"),
         servo_topic=_str_param(node, "servo_topic"),
+        camera_image_topic=_str_param(node, "camera_image_topic"),
+        camera_depth_topic=_str_param(node, "camera_depth_topic"),
+        color_obstacle_hold_s=_float_param(node, "color_obstacle_hold_s"),
         drive_motor=_int_param(node, "drive_motor"),
+        motor_deadband_command=_int_param(node, "motor_deadband_command"),
+        planning_motor_reference=_int_param(node, "planning_motor_reference"),
         max_servo=_int_param(node, "max_servo"),
         grid_size_m=_float_param(node, "grid_size_m"),
         grid_resolution_m=_float_param(node, "grid_resolution_m"),
         local_grid_size_m=_float_param(node, "local_grid_size_m"),
         lidar_max_range_m=_float_param(node, "lidar_max_range_m"),
-        safety_buffer_m=_float_param(node, "safety_buffer_m"),
-        lookahead_m=_float_param(node, "lookahead_m"),
-        steer_kp=_float_param(node, "steer_kp"),
         wheelbase_m=_float_param(node, "wheelbase_m"),
         max_steering_angle_rad=_float_param(node, "max_steering_angle_rad"),
         robot_length_m=_float_param(node, "robot_length_m"),
         robot_width_m=_float_param(node, "robot_width_m"),
-        trajectory_steps=_int_param(node, "trajectory_steps"),
-        trajectory_length_m=_float_param(node, "trajectory_length_m"),
         trajectory_step_m=_float_param(node, "trajectory_step_m"),
         command_delay_s=_float_param(node, "command_delay_s"),
+        actuation_delay_s=_float_param(node, "actuation_delay_s"),
         planning_speed_mps=_float_param(node, "planning_speed_mps"),
+        planning_accel_tau_s=_float_param(node, "planning_accel_tau_s"),
+        planning_decel_tau_s=_float_param(node, "planning_decel_tau_s"),
+        course_laps=_int_param(node, "course_laps"),
         start_yaw_rad=_float_param(node, "start_yaw_rad"),
-        correction_alpha=_float_param(node, "correction_alpha"),
+        odometry_correction_max_m=_float_param(node, "odometry_correction_max_m"),
         fuse_add_alpha=_float_param(node, "fuse_add_alpha"),
         fuse_erode_alpha=_float_param(node, "fuse_erode_alpha"),
-        front_wall_motion_alpha=_float_param(node, "front_wall_motion_alpha"),
-        front_wall_motion_max_step_m=_float_param(node, "front_wall_motion_max_step_m"),
-        front_wall_motion_min_points=_int_param(node, "front_wall_motion_min_points"),
-        wall_pose_correction_alpha=_float_param(node, "wall_pose_correction_alpha"),
-        wall_pose_correction_max_step_m=_float_param(node, "wall_pose_correction_max_step_m"),
-        wall_pose_max_slope=_float_param(node, "wall_pose_max_slope"),
-        wall_yaw_correction_alpha=_float_param(node, "wall_yaw_correction_alpha"),
-        wall_yaw_correction_max_step_rad=_float_param(node, "wall_yaw_correction_max_step_rad"),
+        direction_min_wall_points=_int_param(node, "direction_min_wall_points"),
         direction_lock_confirm_frames=_int_param(node, "direction_lock_confirm_frames"),
         direction_lock_min_score_delta=_float_param(node, "direction_lock_min_score_delta"),
-        front_backup_distance_m=_float_param(node, "front_backup_distance_m"),
-        reverse_hold_seconds=_float_param(node, "reverse_hold_seconds"),
         tick_rate=_float_param(node, "tick_rate"),
         auto_drive_enabled=_bool_param(node, "auto_drive_enabled"),
         debug_view_enabled=_bool_param(node, "debug_view_enabled"),
