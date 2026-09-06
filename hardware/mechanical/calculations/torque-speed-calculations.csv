@@ -1,0 +1,25 @@
+Parameter,Symbol,Value,Unit,Source_or_basis,Formula_or_Notes
+Vehicle mass,m,1.45,kg,Measured with competition battery,Use the final competition configuration for every verification test.
+Rear tyre diameter,D,0.065,m,Confirmed physical measurement,
+Rear tyre radius,r,0.0325,m,Calculated,r = D / 2.
+Steady speed at motor command 150,v,0.319176,m/s,Five-run wheel-odometry measurement,Mean steady speed.
+10-90 percent acceleration at motor command 150,a,0.545253,m/s^2,Five-run wheel-odometry measurement,Mean acceleration over each run's 10-90 percent speed rise.
+10-90 percent acceleration sample SD,s_a,0.063005,m/s^2,Five-run wheel-odometry measurement,
+Linear-fit acceleration,a_fit,0.460465,m/s^2,Five-run wheel-odometry measurement,Secondary analysis over the same rise interval.
+Rolling resistance coefficient,Crr,0.03,unitless,Calculation value,Crr = F_roll / (m * g).
+Rolling resistance force,F_roll,0.427,N,Calculated,F_roll = Crr * m * g.
+Acceleration force,F_acc,0.7906,N,Calculated,F_acc = m * a.
+Required wheel force,F_required,1.2174,N,Calculated,F_required = F_acc + F_roll.
+Required rear axle torque,T_axle_required,0.0396,N*m,Calculated,T_axle_required = F_required * r.
+Belt reduction,R_belt,2.0,ratio,Measured pulleys,40T / 20T.
+Belt efficiency,eta_belt,0.90,unitless,Calculation value,
+Required gearbox output torque,T_gearbox_required,0.0220,N*m,Calculated,T_axle_required / (R_belt * eta_belt).
+Motor supply version,V_motor,12,V,Selected GA25-370 motor version,Do not use 6 V or 24 V table values.
+Motor gearbox ratio,R_internal,9.6,ratio,Selected motor specification,Already included in manufacturer's output torque rating.
+Maximum no-load gearbox output speed,n_no_load,625,rpm,Selected 12 V 9.6:1 motor specification,
+Rated gearbox output speed,n_rated,500,rpm,Manufacturer data for 12 V 9.6:1 model,Rated-speed condition for the rated torque value below.
+Rated gearbox output torque,T_gearbox_rated,0.0294,N*m,Manufacturer data converted from 0.3 kgf*cm,0.3 * 0.09807.
+Theoretical rated axle torque,T_axle_rated,0.0529,N*m,Calculated,T_gearbox_rated * R_belt * eta_belt.
+Rated torque margin,M,1.34,ratio,Calculated,T_gearbox_rated / T_gearbox_required.
+Motor command under test,u,150,command units,ESP32 firmware,Command range is 0 to 400; this is not rpm or m/s.
+PWM duty at command 150,duty,0.375,ratio,ESP32 firmware,duty = 150 / 400 = 3071 / 8191.

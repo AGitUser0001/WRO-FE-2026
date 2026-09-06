@@ -1,0 +1,2 @@
+Item ID,Subsystem,Component,Manufacturer/Model,Quantity,Mass_g,Unit_Cost,Supplier,Purpose,Substitution,Evidence_Link
+BOM-001,Compute,[Main controller],[Model],1,,,,[Purpose],[Allowed substitute],
