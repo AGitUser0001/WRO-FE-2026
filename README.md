@@ -77,7 +77,7 @@ The robot must complete three laps on the track after being placed randomly insi
 
 The robot must complete three laps on the track with randomly arranged green and red traffic signs. It must pass on the right side of a red pillar and the left side of a green pillar. See the [Obstacle Challenge Strategy](docs/08-obstacle-challenge-strategy.md).
 
-Learn about the challenges and rules [here](https://wro-association.org/wp-content/uploads/WRO-2024-Future-Engineers-Self-Driving-Cars-General-Rules.pdf).
+Learn about the challenges and rules [here](https://wro-association.org/wp-content/uploads/WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.pdf).
 
 ---
 
