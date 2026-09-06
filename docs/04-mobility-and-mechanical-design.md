@@ -714,7 +714,7 @@ Building on the raised version, the team integrated the program-start button on 
 
 ### CAD
 
-- [Hiway complete mechanical STEP assembly (CAD model)](../media/cad/Botzill%20Autonomous%20Car%20-%20Hiway%20Mechanical%20Assembly.step)
+- [Hiway complete mechanical STEP assembly (CAD model)](../media/cad/Botzill%20Autonomous%20Car%20-%20Hiway%20Mechanical%20Assembly.step.zip)
 
 ### Drawing
 
