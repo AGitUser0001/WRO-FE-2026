@@ -1,0 +1,340 @@
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <world name="wro_fe_2026">
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin
+      filename="libignition-gazebo-physics-system.so"
+      name="ignition::gazebo::systems::Physics">
+    </plugin>
+    <plugin
+      filename="libignition-gazebo-user-commands-system.so"
+      name="ignition::gazebo::systems::UserCommands">
+    </plugin>
+    <plugin
+      filename="libignition-gazebo-sensors-system.so"
+      name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin
+      filename="libignition-gazebo-scene-broadcaster-system.so"
+      name="ignition::gazebo::systems::SceneBroadcaster">
+    </plugin>
+
+    <plugin filename="gz-sim-imu-system"
+        name="gz::sim::systems::Imu">
+    </plugin>
+
+    <gui fullscreen="0">
+      <!-- 3D scene -->
+      <plugin filename="GzScene3D" name="3D View">
+        <ignition-gui>
+        <title>3D View</title>
+        <property type="bool" key="showTitleBar">false</property>
+        <property type="string" key="state">docked</property>
+        </ignition-gui>
+
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.4 0.4 0.4</ambient_light>
+        <background_color>0.8 0.8 0.8</background_color>
+      </plugin>
+
+      <!-- World control -->
+      <plugin filename="WorldControl" name="World control">
+        <ignition-gui>
+        <title>World control</title>
+        <property type="bool" key="showTitleBar">false</property>
+        <property type="bool" key="resizable">false</property>
+        <property type="double" key="height">72</property>
+        <property type="double" key="width">121</property>
+        <property type="double" key="z">1</property>
+
+        <property type="string" key="state">floating</property>
+        <anchors target="3D View">
+            <line own="left" target="left"/>
+            <line own="bottom" target="bottom"/>
+        </anchors>
+        </ignition-gui>
+
+        <play_pause>true</play_pause>
+        <step>true</step>
+        <start_paused>true</start_paused>
+        <service>/world/Moving_robot/control</service>
+        <stats_topic>/world/Moving_robot/stats</stats_topic>
+      </plugin>
+
+      <!-- World statistics -->
+      <plugin filename="WorldStats" name="World stats">
+        <ignition-gui>
+        <title>World stats</title>
+        <property type="bool" key="showTitleBar">false</property>
+        <property type="bool" key="resizable">false</property>
+        <property type="double" key="height">110</property>
+        <property type="double" key="width">290</property>
+        <property type="double" key="z">1</property>
+
+        <property type="string" key="state">floating</property>
+        <anchors target="3D View">
+            <line own="right" target="right"/>
+            <line own="bottom" target="bottom"/>
+        </anchors>
+        </ignition-gui>
+
+        <sim_time>true</sim_time>
+        <real_time>true</real_time>
+        <real_time_factor>true</real_time_factor>
+        <iterations>true</iterations>
+        <topic>/world/Moving_robot/stats</topic>
+      </plugin>
+
+      <!-- Entity tree -->
+      <plugin filename="EntityTree" name="Entity tree">
+      </plugin>
+
+      <!-- KeyPublisher plugin-->
+      <!-- <plugin filename="KeyPublisher" name="Key Publisher"/> -->
+    </gui>
+
+    <light type="directional" name="sun">
+        <cast_shadows>true</cast_shadows>
+        <pose>0 0 10 0 0 0</pose>
+        <diffuse>0.8 0.8 0.8 1</diffuse>
+        <specular>0.2 0.2 0.2 1</specular>
+        <attenuation>
+            <range>1000</range>
+            <constant>0.9</constant>
+            <linear>0.01</linear>
+            <quadratic>0.001</quadratic>
+        </attenuation>
+        <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <include>
+      <uri>model://wro_mat</uri>
+      <pose>0 0 0 0 0 0</pose>
+    </include>
+
+    <!-- 车：不要直接 include urdf，改为 include 一个 SDF 模型 -->
+    <!-- <include>
+      <uri>model://wro_car</uri>
+      <pose>0.262888 -1.39015 0.05 0 0 0</pose>
+    </include> -->
+
+    <!-- ========= 内墙（3.0m 内边界，高 0.10m） ========= -->
+    <model name="inner_walls">
+      <static>true</static>
+
+      <link name="north">
+        <pose>0 1.5 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>3.0 0.02 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>3.0 0.02 0.10</size></box></geometry>
+          <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material>
+        </visual>
+      </link>
+
+      <link name="south">
+        <pose>0 -1.5 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>3.0 0.02 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>3.0 0.02 0.10</size></box></geometry>
+          <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material>
+        </visual>
+      </link>
+
+      <link name="east">
+        <pose>1.5 0 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.02 3.0 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.02 3.0 0.10</size></box></geometry>
+          <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material>
+        </visual>
+      </link>
+
+      <link name="west">
+        <pose>-1.5 0 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.02 3.0 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.02 3.0 0.10</size></box></geometry>
+          <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========= 中心障碍墙 1m x 1m ========= -->
+    <model name="center_block">
+      <static>true</static>
+
+      <link name="north">
+        <pose>0 0.5 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>1.0 0.02 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>1.0 0.02 0.10</size></box></geometry>
+          <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material>
+        </visual>
+      </link>
+
+      <link name="south">
+        <pose>0 -0.5 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>1.0 0.02 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>1.0 0.02 0.10</size></box></geometry>
+          <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material>
+        </visual>
+      </link>
+
+      <link name="east">
+        <pose>0.5 0 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.02 1.0 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.02 1.0 0.10</size></box></geometry>
+          <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material>
+        </visual>
+      </link>
+
+      <link name="west">
+        <pose>-0.5 0 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.02 1.0 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.02 1.0 0.10</size></box></geometry>
+          <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========= 交通标志（红/绿柱） =========
+         尺寸：0.05 x 0.05 x 0.10m
+         位置：按“直线路段 3×2 小方块网格”放置（对应你第三张图圈出的布局）
+         你抽签少于 8 根：直接删除多余 link 即可
+    -->
+    <model name="traffic_signs_green_1">
+      <static>true</static>
+      <link name="green_1">
+        <pose>-0.9 0.5 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.05 0.05 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.05 0.05 0.10</size></box></geometry>
+          <material><ambient>0.267 0.839 0.173 1</ambient><diffuse>0.267 0.839 0.173 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="traffic_signs_green_2">
+      <static>true</static>
+      <link name="green_2">
+        <pose>0.90 0 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.05 0.05 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.05 0.05 0.10</size></box></geometry>
+          <material><ambient>0.267 0.839 0.173 1</ambient><diffuse>0.267 0.839 0.173 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="traffic_signs_green_3">
+      <static>true</static>
+      <link name="green_3">
+        <pose>-0.5 -0.90 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.05 0.05 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.05 0.05 0.10</size></box></geometry>
+          <material><ambient>0.267 0.839 0.173 1</ambient><diffuse>0.267 0.839 0.173 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="traffic_signs_green_4">
+      <static>true</static>
+      <link name="green_4">
+        <pose>-0.5 0.90 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.05 0.05 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.05 0.05 0.10</size></box></geometry>
+          <material><ambient>0.267 0.839 0.173 1</ambient><diffuse>0.267 0.839 0.173 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="traffic_signs_red_1">
+      <static>true</static>
+      <link name="red_1">
+        <pose>0.5 -0.90 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.05 0.05 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.05 0.05 0.10</size></box></geometry>
+          <material><ambient>0.933 0.153 0.216 1</ambient><diffuse>0.933 0.153 0.216 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="traffic_signs_red_2">
+      <static>true</static>
+      <link name="red_2">
+        <pose>1.1 -0.5 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.05 0.05 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.05 0.05 0.10</size></box></geometry>
+          <material><ambient>0.933 0.153 0.216 1</ambient><diffuse>0.933 0.153 0.216 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="traffic_signs_red_3">
+      <static>true</static>
+      <link name="red_3">
+        <pose>-0.9 -0.5 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.05 0.05 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.05 0.05 0.10</size></box></geometry>
+          <material><ambient>0.933 0.153 0.216 1</ambient><diffuse>0.933 0.153 0.216 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="traffic_signs_red_4">
+      <static>true</static>
+      <link name="red_4">
+        <pose>0.5 0.90 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.05 0.05 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.05 0.05 0.10</size></box></geometry>
+          <material><ambient>0.933 0.153 0.216 1</ambient><diffuse>0.933 0.153 0.216 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========= 停车场（紫色限制块） =========
+         按你第2张图：两块紫色限制块形成停车场边界
+         - 两块之间距离：0.20m（固定宽度 20cm）
+         - 放在“直线路段”上：这里选在靠下方的直线区域，便于你对照
+         - 你要把停车场移到别的直线段：只改 x/y 即可
+    -->
+    <model name="parking_lot">
+      <static>true</static>
+
+      <!-- 以 x=0.80 为停车场中心线示例；y 方向相距 0.20m -->
+      <link name="parking_left">
+        <pose>-1.39015 -0.162888 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.20 0.02 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.20 0.02 0.10</size></box></geometry>
+          <material><ambient>1 0 1 1</ambient><diffuse>1 0 1 1</diffuse></material>
+        </visual>
+      </link>
+
+      <link name="parking_right">
+        <pose>-1.39015 -0.492888 0.05 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.20 0.02 0.10</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.20 0.02 0.10</size></box></geometry>
+          <material><ambient>1 0 1 1</ambient><diffuse>1 0 1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

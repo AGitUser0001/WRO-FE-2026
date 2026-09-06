@@ -1,0 +1,258 @@
+# 全新配置：基于 SLAM 而非 AMCL，包含完整行为树、插件定义与时间戳同步
+# use_sim_time 在这里保持 False（real 默认）。Sim 模式由 hiway_sim_bringup/sim.launch.py 通过
+# launch_arguments 把 use_sim_time:=true 透传进来覆盖。不要在这里硬写成 True，会污染 real 环境。
+bt_navigator:
+  ros__parameters:
+    use_sim_time: False
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odometry/filtered
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    # 默认使用 navigate_to_pose 行为树，如果你有自定义的行为树xml文件，请在这里取消注释并指定：
+    # default_nav_to_pose_bt_xml: "/path/to/your/bt.xml"
+
+    # 定义导航所使用的插件库 (Humble 版本)
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_path_expiring_timer_condition
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+
+# 恢复与纠错行为服务器 (Humble 中更名为 behavior_server)
+behavior_server:
+  ros__parameters:
+    use_sim_time: False
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    # Ackermann 车不能原地旋转，但必须保留 spin 插件（默认 BT XML 引用它，
+    # 缺少会导致 BT 加载失败、goal rejected）。spin 会自然失败，BT 自动
+    # fallthrough 到 backup → wait。
+    behavior_plugins: ["spin", "backup", "wait"]
+    spin:
+      plugin: "nav2_behaviors/Spin"
+    backup:
+      plugin: "nav2_behaviors/BackUp"
+    wait:
+      plugin: "nav2_behaviors/Wait"
+    global_frame: odom
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+    # Ackermann 不能旋转，但 spin 必须保留给 BT。
+    # 极小的速度 + 短超时 → spin 快速失败 → fallthrough 到 backup。
+    max_rotational_vel: 0.01
+    min_rotational_vel: 0.0
+    spin_dist: 0.1
+    rotational_acc_lim: 3.2
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 20.0
+    use_sim_time: False
+    planner_plugins: ["GridBased"]
+    # Smac Hybrid-A* + Reeds-Shepp：生成符合 Ackermann 运动学的曲线路径
+    # 取代默认 NavfnPlanner（NavfnPlanner 会输出含 90° 急转和原地掉头的栅格路径，Ackermann 走不出来）
+    GridBased:
+      plugin: "nav2_smac_planner/SmacPlannerHybrid"
+      tolerance: 0.25
+      # Motion model: REEDS_SHEPP allows reversing, DUBIN forward only / 运动学模型：REEDS_SHEPP 允许倒车，DUBIN 仅前进
+      motion_model_for_search: "REEDS_SHEPP"
+      # 最小转弯半径，单位：米。来自车辆参数 wheelbase=0.138m, max_steer=0.4188rad → ~0.31m
+      minimum_turning_radius: 0.31
+      # Penalty for reversing (higher = less likely to reverse) / 倒车惩罚系数（越大越不容易倒车）
+      # 1.0 = 倒车与前进同价，窄通道卡死时能自己后退。如果开阔地瞎倒，提到 1.5
+      reverse_penalty: 1.0
+      change_penalty: 0.0
+      non_straight_penalty: 1.2
+      # 代价惩罚：越大 planner 越远离障碍物。走廊窄(40cm)不能用大 inflation，
+      # 靠这个参数让 planner 在有空间时偏好远离障碍物的路径。
+      cost_penalty: 3.0
+      analytic_expansion_ratio: 3.5
+      allow_unknown: true
+
+controller_server:
+  ros__parameters:
+    use_sim_time: False
+    controller_frequency: 20.0
+    # 默认 odom_topic 是 /odom，但本项目 EKF 输出的是 /odometry/filtered。
+    # 不指定的话 controller_server 完全收不到 odometry，控制律退化。
+    odom_topic: /odometry/filtered
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.2
+      movement_time_allowance: 15.0
+
+    general_goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      # 到达目标点的位置容忍度，单位：米。
+      xy_goal_tolerance: 0.15
+      # 朝向容忍度。Ackermann 车不能原地转，yaw 必须放宽，否则到达位置后
+      # 因朝向不匹配会一直 recovery。6.28 = 2π = 任意朝向都接受。
+      yaw_goal_tolerance: 6.28
+      stateful: True
+
+    # Regulated Pure Pursuit：Ackermann 友好的局部控制器
+    # 取代 DWB（DWB 是为差速底盘设计的，会发出独立 angular.z 命令并要求原地旋转，
+    # Ackermann 车做不到，会导致 wheel odometry 与真实位姿严重 drift，进而 SLAM 失锁）
+    FollowPath:
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      desired_linear_vel: 0.26
+      lookahead_dist: 0.6
+      min_lookahead_dist: 0.3
+      max_lookahead_dist: 0.9
+      lookahead_time: 1.5
+      # 关键：禁用原地旋转，Ackermann 车无法做到
+      rotate_to_heading_angular_vel: 0.0
+      use_rotate_to_heading: false
+      # Allow reversing when path requires it / 允许倒车（当路径需要时）
+      allow_reversing: true
+      use_collision_detection: true
+      # 放宽碰撞检测：从 1.0s 降到 0.5s，减少弯道处的误触发
+      max_allowed_time_to_collision_up_to_carrot: 0.5
+      use_regulated_linear_velocity_scaling: true
+      use_cost_regulated_linear_velocity_scaling: false
+      regulated_linear_scaling_min_radius: 0.5
+      regulated_linear_scaling_min_speed: 0.15
+      max_angular_accel: 3.0
+      transform_tolerance: 0.1
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_link
+      use_sim_time: False
+      rolling_window: true
+      width: 6
+      height: 6
+      resolution: 0.05
+      # 机器人半径，单位：米。用于在地图上为机器人创建一个“安全边界”。
+      robot_radius: 0.05
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          # 太小比如0.02m (2cm)会导致检测到到车自身的结构 被 costmap 标记为障碍物
+          raytrace_min_range: 0.05
+          obstacle_max_range: 2.5
+          # 太小比如0.02m (2cm)会导致检测到到车自身的结构 被 costmap 标记为障碍物
+          obstacle_min_range: 0.05
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        # 膨胀代价缩放因子，单位：每米。值越大，机器人周围的“禁区”越陡峭（代价上升越快）。
+        cost_scaling_factor: 5.0
+        # 膨胀半径，单位：米。这是机器人周围的“禁区”大小。
+        # 0.08m = 8cm，足够让小车避开障碍物
+        inflation_radius: 0.08
+      always_send_full_costmap: True
+
+# velocity_smoother 在 nav2_bringup navigation_launch.py 中默认启用
+# controller_server → /cmd_vel_nav → velocity_smoother → /cmd_vel
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: False
+    smoothing_frequency: 20.0
+    scale_velocities: false
+    feedback: "OPEN_LOOP"
+    max_velocity: [0.26, 0.0, 0.6]
+    min_velocity: [-0.26, 0.0, -0.6]
+    max_accel: [2.5, 0.0, 3.2]
+    max_decel: [-2.5, 0.0, -3.2]
+    odom_topic: /odometry/filtered
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      use_sim_time: False
+      # 机器人半径，单位：米。用于在地图上为机器人创建一个“安全边界”。
+      robot_radius: 0.05
+      resolution: 0.05
+      track_unknown_space: true
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+        # rtabmap
+        # map_topic: /rtabmap/map
+        # slam toolbox
+        map_topic: /map
+        # 边建图边导航：unknown 区域视为可通行（free），而非障碍物。
+        # 没有这个设置，SLAM 未扫到的区域会被 planner 当作 lethal → "no valid path"。
+        unknown_cost_value: 0
+        trinary_costmap: false
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          # 太小比如0.02m (2cm)会导致检测到到车自身的结构 被 costmap 标记为障碍物
+          raytrace_min_range: 0.05
+          obstacle_max_range: 2.5
+          # 太小比如0.02m (2cm)会导致检测到到车自身的结构 被 costmap 标记为障碍物
+          obstacle_min_range: 0.05
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        # 膨胀代价缩放因子，单位：每米。值越大，机器人周围的“禁区”越陡峭（代价上升越快）。
+        cost_scaling_factor: 5.0
+        # 膨胀半径，单位：米。这是机器人周围的“禁区”大小。
+        # 0.08m = 8cm，足够让小车避开障碍物
+        inflation_radius: 0.08
+      always_send_full_costmap: True
