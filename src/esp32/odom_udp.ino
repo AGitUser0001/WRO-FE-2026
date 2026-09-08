@@ -1,7 +1,8 @@
 #include <ETH.h>
 
 static NetworkUDP odom_udp;
-#define ODOM_UDP_PORT 9999 static IPAddress odom_target_ip;
+#define ODOM_UDP_PORT 9999
+static IPAddress odom_target_ip;
 
 extern int32_t last_servo_pos;
 extern int32_t read_encoder_ticks();
@@ -23,7 +24,7 @@ void odomUdpTask(void *param) {
 
     memcpy(&buf[0], &ticks, 4);
     memcpy(&buf[4], &servo, 4);
-    memcpy(&buf[8], &now, 4);
+    memcpy(&buf[8], &now,   4);
 
     odom_udp.beginPacket(odom_target_ip, ODOM_UDP_PORT);
     odom_udp.write(buf, 12);

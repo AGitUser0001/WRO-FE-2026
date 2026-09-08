@@ -1,5 +1,6 @@
 #include <driver/i2s.h>
 
+// https://github.com/pschatzmann/arduino-audio-driver
 #include "AudioBoard.h"
 
 /* ---------- I2C ---------- */
@@ -8,13 +9,13 @@
 #define ES8311_ADDR 0x18
 
 /* ---------- I2S ---------- */
-#define I2S_MCK 8 #define I2S_BCK 11
+#define I2S_MCK 8
+#define I2S_BCK 11
 #define I2S_WS 9
 #define I2S_DO 46
 #define I2S_DI 10
 
 /* ---------- AMP ---------- */
-#define AMP_ENABLE 21
 
 AudioBoard board(AudioDriverES8311, NoPins);
 
@@ -44,9 +45,6 @@ void setup_i2s() {
 void audio_init() {
   log_i("Starting audio initialization");
 
-  pinMode(AMP_ENABLE, OUTPUT);
-  digitalWrite(AMP_ENABLE, HIGH);
-
   CodecConfig cfg;
 
   cfg.input_device = ADC_INPUT_LINE1;
@@ -68,6 +66,7 @@ void audio_init() {
     log_e("Codec initialization failed");
   }
 
+  //!!!DO NOT RANDOMLY INCREASE THIS!!! - max. 50
   board.setVolume(45);
 
   delay(100);
@@ -99,6 +98,7 @@ void startTone(float freq, int duration_ms) {
   tone_active = true;
 }
 
+//!!!DO NOT RANDOMLY INCREASE THIS!!! - max. 3000
 #define AMPLITUDE 3000
 void audioTask(void *param) {
   const int SAMPLE_RATE = 44100;

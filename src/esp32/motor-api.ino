@@ -10,7 +10,8 @@
 #define DIR_DOWN 2
 #define MOTOR_SPEED_MAX 400
 
-#define LEDC_MAX_DUTY 8191 #define LEDC_MOTOR_A_CHANNEL 0
+#define LEDC_MAX_DUTY 8191
+#define LEDC_MOTOR_A_CHANNEL 0
 #define LEDC_MOTOR_TIMER 0
 
 volatile int32_t encoder_ticks = 0;
@@ -33,25 +34,26 @@ void IRAM_ATTR encoder_ISR() {
   uint8_t transition = (encoder_last_state << 2) | state;
 
   switch (transition) {
-  case 0b0001:
-  case 0b0111:
-  case 0b1110:
-  case 0b1000:
-    encoder_ticks++;
-    break;
+    // match the 202602 encoder convention, forward should increase ticks
+    case 0b0001:
+    case 0b0111:
+    case 0b1110:
+    case 0b1000:
+      encoder_ticks--;
+      break;
 
-  case 0b0010:
-  case 0b1011:
-  case 0b1101:
-  case 0b0100:
-    encoder_ticks--;
-    break;
+    case 0b0010:
+    case 0b1011:
+    case 0b1101:
+    case 0b0100:
+      encoder_ticks++;
+      break;
 
-  default:
-    if (encoder_last_state != state) {
-      encoder_invalid_transitions++;
-    }
-    break;
+    default:
+      if (encoder_last_state != state) {
+        encoder_invalid_transitions++;
+      }
+      break;
   }
 
   encoder_last_state = state;

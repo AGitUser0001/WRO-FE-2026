@@ -1,5 +1,7 @@
 #define SG90_PIN 15
-#define SG90_FREQ 50 #define SG90_RES_BITS 13 #define SG90_CHANNEL 2
+#define SG90_FREQ 50
+#define SG90_RES_BITS 13
+#define SG90_CHANNEL 2
 #define SG90_MAX_DUTY ((1 << SG90_RES_BITS) - 1)
 
 void sg90_pwm_init() {

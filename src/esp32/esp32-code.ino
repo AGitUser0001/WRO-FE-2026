@@ -2,12 +2,12 @@
 #pragma message "Building for ESP32-S3: ensure micro_ros_arduino esp32s3 binary exists"
 #endif
 
-#include <ETH.h>
-#include <Wire.h>
-#include <esp_task_wdt.h>
 #include <micro_ros_arduino.h>
+#include <Wire.h>
+#include <ETH.h>
+#include <esp_task_wdt.h>
 
-#define WDT_TIMEOUT_SEC 5
+#define WDT_TIMEOUT_SEC 15
 #define MOTOR_COMMAND_TIMEOUT_MS 400
 #ifndef WRO_ROS_DOMAIN_ID
 #define WRO_ROS_DOMAIN_ID 255
@@ -41,6 +41,7 @@ std_msgs__msg__Int32 recv_msg_motor;
 static uint32_t last_motor_command_ms = 0;
 static bool motor_command_active = false;
 static bool motor_timeout_stopped = true;
+static uint8_t agent_ping_fail_count = 0;
 
 rcl_publisher_t encoder_publisher;
 std_msgs__msg__Int32 send_msg_encoder;
@@ -65,33 +66,28 @@ enum AgentState {
   AGENT_DISCONNECTED
 } agent_state;
 
-#define EXECUTE_EVERY_N_MS(MS, X)              \
-  do {                                         \
-    static volatile int64_t _t = -1;           \
-    if (_t == -1) {                            \
-      _t = uxr_millis();                       \
-    }                                          \
-    if ((int64_t)(uxr_millis() - _t) > (MS)) { \
-      X;                                       \
-      _t = uxr_millis();                       \
-    }                                          \
+#define EXECUTE_EVERY_N_MS(MS, X)                          \
+  do {                                                     \
+    static volatile int64_t _t = -1;                       \
+    if (_t == -1) { _t = uxr_millis(); }                   \
+    if ((int64_t)(uxr_millis() - _t) > (MS)) { X; _t = uxr_millis(); } \
   } while (0)
 
-static char *buf_send_msg = nullptr;
-static char *buf_recv_oled = nullptr;
+static char    *buf_send_msg   = nullptr;
+static char    *buf_recv_oled  = nullptr;
 static int32_t *buf_recv_audio = nullptr;
 
-#define RCINIT(fn)                                           \
-  {                                                          \
-    rcl_ret_t temp_rc = fn;                                  \
-    if ((temp_rc != RCL_RET_OK)) {                           \
-      char buf[80];                                          \
-      snprintf(buf, sizeof(buf), "RCINIT ERR %s:%d code=%d", \
-               __FUNCTION__, __LINE__, temp_rc);             \
-      log_e("%s", buf);                                      \
-      rcl_reset_error();                                     \
-      return false;                                          \
-    }                                                        \
+#define RCINIT(fn)                                                             \
+  {                                                                            \
+    rcl_ret_t temp_rc = fn;                                                    \
+    if ((temp_rc != RCL_RET_OK)) {                                             \
+      char buf[80];                                                             \
+      snprintf(buf, sizeof(buf), "RCINIT ERR %s:%d code=%d",                  \
+               __FUNCTION__, __LINE__, temp_rc);                               \
+      log_e("%s", buf);                                                        \
+      rcl_reset_error();                                                       \
+      return false;                                                            \
+    }                                                                          \
   }
 
 #define RCCHECK(fn)                                                                        \
@@ -230,9 +226,7 @@ void servo_subscription_callback(const void *msgin) {
   int32_t value = msg->data;
   int32_t set_value = Ctrl_sg90(value);
 
-  char buf[100];
-  snprintf(buf, sizeof(buf), "SERVO: Received servo_cmd: %d, set_value=%d\r\n", value, set_value);
-  publish_text(buf);
+  log_i("SERVO: cmd=%ld set_value=%ld", (long)value, (long)set_value);
 }
 
 extern uint16_t motor_a_target_speed;
@@ -284,6 +278,7 @@ void motor_subscription_callback(const void *msgin) {
   const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
   int32_t value = msg->data;
 
+  // DIR_STOP = 0, DIR_UP = 1, DIR_DOWN = 2
   uint8_t dir;
   uint16_t speed;
 
@@ -306,9 +301,7 @@ void motor_subscription_callback(const void *msgin) {
   motor_timeout_stopped = (value == 0);
   Motor_A_Control(dir, speed);
 
-  char buf[100];
-  snprintf(buf, sizeof(buf), "MOTOR: Received motor_cmd: %ld, dir=%d, speed=%u\r\n", (long)value, (int)dir, (unsigned int)speed);
-  publish_text(buf);
+  log_i("MOTOR: cmd=%ld dir=%d speed=%u", (long)value, (int)dir, (unsigned int)speed);
 }
 
 void audio_subscription_callback(const void *msgin) {
@@ -350,17 +343,17 @@ extern void odom_udp_task_start();
 bool create_entities() {
   motor_safety_stop();
 
-  memset(&publisher, 0, sizeof(publisher));
+  memset(&publisher,         0, sizeof(publisher));
   memset(&encoder_publisher, 0, sizeof(encoder_publisher));
-  memset(&subscriber_oled, 0, sizeof(subscriber_oled));
-  memset(&subscriber_servo, 0, sizeof(subscriber_servo));
-  memset(&subscriber_motor, 0, sizeof(subscriber_motor));
-  memset(&subscriber_audio, 0, sizeof(subscriber_audio));
-  memset(&timer_motor, 0, sizeof(timer_motor));
-  memset(&timer_adc, 0, sizeof(timer_adc));
-  memset(&executor, 0, sizeof(executor));
-  memset(&node, 0, sizeof(node));
-  memset(&support, 0, sizeof(support));
+  memset(&subscriber_oled,   0, sizeof(subscriber_oled));
+  memset(&subscriber_servo,  0, sizeof(subscriber_servo));
+  memset(&subscriber_motor,  0, sizeof(subscriber_motor));
+  memset(&subscriber_audio,  0, sizeof(subscriber_audio));
+  memset(&timer_motor,       0, sizeof(timer_motor));
+  memset(&timer_adc,         0, sizeof(timer_adc));
+  memset(&executor,          0, sizeof(executor));
+  memset(&node,              0, sizeof(node));
+  memset(&support,           0, sizeof(support));
   support_init_options = rcl_get_zero_initialized_init_options();
   allocator = rcl_get_default_allocator();
 
@@ -375,15 +368,15 @@ bool create_entities() {
 
   RCINIT(rclc_node_init_default(&node, "micro_ros_esp32_node", "", &support));
 
-  RCINIT(rclc_publisher_init_default(
+  RCINIT(rclc_publisher_init_best_effort(
       &publisher, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
       "/microROS/status"));
 
   std_msgs__msg__String__init(&send_msg);
-  send_msg.data.data = buf_send_msg;
+  send_msg.data.data     = buf_send_msg;
   send_msg.data.capacity = STRING_BUFFER_SIZE;
-  send_msg.data.size = 0;
+  send_msg.data.size     = 0;
 
   RCINIT(rclc_publisher_init_best_effort(
       &encoder_publisher, &node,
@@ -396,9 +389,9 @@ bool create_entities() {
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
       "/microROS/oled_display"));
   std_msgs__msg__String__init(&recv_msg_oled);
-  recv_msg_oled.data.data = buf_recv_oled;
+  recv_msg_oled.data.data     = buf_recv_oled;
   recv_msg_oled.data.capacity = 500;
-  recv_msg_oled.data.size = 0;
+  recv_msg_oled.data.size     = 0;
 
   RCINIT(rclc_subscription_init_best_effort(
       &subscriber_servo, &node,
@@ -417,9 +410,9 @@ bool create_entities() {
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32MultiArray),
       "/microROS/audio_play"));
   std_msgs__msg__Int32MultiArray__init(&recv_msg_audio);
-  recv_msg_audio.data.data = buf_recv_audio;
+  recv_msg_audio.data.data     = buf_recv_audio;
   recv_msg_audio.data.capacity = 2;
-  recv_msg_audio.data.size = 0;
+  recv_msg_audio.data.size     = 0;
 
   RCINIT(rclc_timer_init_default(
       &timer_motor, &support,
@@ -433,7 +426,7 @@ bool create_entities() {
 
   RCINIT(rclc_executor_init(&executor, &support.context, 6, &allocator));
 
-  RCINIT(rclc_executor_add_subscription(&executor, &subscriber_oled, &recv_msg_oled, &oled_subscription_callback, ON_NEW_DATA));
+  RCINIT(rclc_executor_add_subscription(&executor, &subscriber_oled,  &recv_msg_oled,  &oled_subscription_callback,  ON_NEW_DATA));
   RCINIT(rclc_executor_add_subscription(&executor, &subscriber_servo, &recv_msg_servo, &servo_subscription_callback, ON_NEW_DATA));
   RCINIT(rclc_executor_add_subscription(&executor, &subscriber_motor, &recv_msg_motor, &motor_subscription_callback, ON_NEW_DATA));
   RCINIT(rclc_executor_add_subscription(&executor, &subscriber_audio, &recv_msg_audio, &audio_subscription_callback, ON_NEW_DATA));
@@ -445,10 +438,11 @@ bool create_entities() {
   } else {
     log_i("Clock synced with agent.");
   }
+  agent_ping_fail_count = 0;
 
   static bool odom_udp_started = false;
   if (!odom_udp_started) {
-    odom_udp_init("192.168.10.1");
+    odom_udp_init("192.168.10.1");  // Jetson IP
     odom_udp_task_start();
     odom_udp_started = true;
   }
@@ -466,10 +460,10 @@ void destroy_entities() {
 
   rclc_executor_fini(&executor);
 
-  rcl_publisher_fini(&publisher, &node);
+  rcl_publisher_fini(&publisher,         &node);
   rcl_publisher_fini(&encoder_publisher, &node);
 
-  rcl_subscription_fini(&subscriber_oled, &node);
+  rcl_subscription_fini(&subscriber_oled,  &node);
   rcl_subscription_fini(&subscriber_servo, &node);
   rcl_subscription_fini(&subscriber_motor, &node);
   rcl_subscription_fini(&subscriber_audio, &node);
@@ -485,7 +479,8 @@ void destroy_entities() {
 }
 
 void setup() {
-  Wire.begin(13, 12);
+  Wire.begin(13, 12);  // SDA, SCL
+
   oled_init();
   sg90_pwm_init();
   motor_init();
@@ -495,8 +490,8 @@ void setup() {
   ethernet_init("192.168.10.1", "192.168.10.2");
   set_microros_ethernet_udp_transports("192.168.10.1", 8888);
 
-  buf_send_msg = (char *)malloc(STRING_BUFFER_SIZE);
-  buf_recv_oled = (char *)malloc(500);
+  buf_send_msg   = (char    *)malloc(STRING_BUFFER_SIZE);
+  buf_recv_oled  = (char    *)malloc(500);
   buf_recv_audio = (int32_t *)malloc(2 * sizeof(int32_t));
 
   agent_state = WAITING_AGENT;
@@ -529,32 +524,40 @@ void loop() {
     }
     break;
 
-  case AGENT_CONNECTED:
-    EXECUTE_EVERY_N_MS(2000,
-                       agent_state = (RMW_RET_OK == rmw_uros_ping_agent(50, 1))
-                                         ? AGENT_CONNECTED
-                                         : AGENT_DISCONNECTED;
-                       if (agent_state == AGENT_DISCONNECTED) log_w("Agent lost! Reconnecting..."););
-    if (agent_state == AGENT_CONNECTED) {
-
-      rcl_ret_t spin_rc = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
-      if (spin_rc != RCL_RET_OK && spin_rc != RCL_RET_TIMEOUT) {
-        log_w("executor spin error %d, forcing disconnect", (int)spin_rc);
-        agent_state = AGENT_DISCONNECTED;
+    case AGENT_CONNECTED:
+      EXECUTE_EVERY_N_MS(2000,
+        if (RMW_RET_OK == rmw_uros_ping_agent(200, 2)) {
+          agent_ping_fail_count = 0;
+          agent_state = AGENT_CONNECTED;
+        } else {
+          agent_ping_fail_count++;
+          log_w("Agent ping failed %u/3", (unsigned int)agent_ping_fail_count);
+          if (agent_ping_fail_count >= 3) {
+            agent_state = AGENT_DISCONNECTED;
+            log_w("Agent lost after repeated ping failures. Reconnecting...");
+          }
+        }
+      );
+      if (agent_state == AGENT_CONNECTED) {
+        rcl_ret_t spin_rc = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
+        if (spin_rc != RCL_RET_OK && spin_rc != RCL_RET_TIMEOUT) {
+          log_w("executor spin error %d, forcing disconnect", (int)spin_rc);
+          agent_state = AGENT_DISCONNECTED;
+        }
       }
-    }
-    break;
+      break;
 
-  case AGENT_DISCONNECTED:
-    destroy_entities();
-    set_microros_ethernet_udp_transports("192.168.10.1", 8888);
-    delay(500);
-    log_i("Transport re-registered. Entering WAITING_AGENT...");
-    agent_state = WAITING_AGENT;
-    break;
+    case AGENT_DISCONNECTED:
+      destroy_entities();
+      agent_ping_fail_count = 0;
+      set_microros_ethernet_udp_transports("192.168.10.1", 8888);
+      delay(500);  // let network stack settle
+      log_i("Transport re-registered. Entering WAITING_AGENT...");
+      agent_state = WAITING_AGENT;
+      break;
 
-  default:
-    agent_state = WAITING_AGENT;
-    break;
+    default:
+      agent_state = WAITING_AGENT;
+      break;
   }
 }
