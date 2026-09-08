@@ -1,5 +1,5 @@
-#include <ETH.h>
 #include <SPI.h>
+#include <ETH.h>
 
 #define ETH_SO 17
 #define ETH_SI 6
@@ -49,6 +49,7 @@ void ethernet_init(char *agent_ip, char *local_ip) {
     log_i("Static IP configured.");
   }
 
+  // Wait until TCP/IP stack is fully ready
   log_i("Waiting for IP...");
   while (!ETH.hasIP()) {
     delay(50);
@@ -62,9 +63,9 @@ static NetworkUDP udp_client;
 
 bool eth_transport_open(struct uxrCustomTransport *transport) {
   struct micro_ros_agent_locator *locator = (struct micro_ros_agent_locator *)transport->args;
+  // Always stop first to release any stale socket, then re-bind
   udp_client.stop();
-  udp_client.begin(locator->port);
-  return true;
+  return udp_client.begin(locator->port) != 0;
 }
 
 bool eth_transport_close(struct uxrCustomTransport *transport) {
@@ -73,29 +74,41 @@ bool eth_transport_close(struct uxrCustomTransport *transport) {
 }
 
 size_t eth_transport_write(struct uxrCustomTransport *transport, const uint8_t *buf, size_t len, uint8_t *errcode) {
-  (void)errcode;
+  *errcode = 0;
   struct micro_ros_agent_locator *locator = (struct micro_ros_agent_locator *)transport->args;
 
-  udp_client.beginPacket(locator->address, locator->port);
+  if (!udp_client.beginPacket(locator->address, locator->port)) {
+    *errcode = 1;
+    return 0;
+  }
   size_t sent = udp_client.write(buf, len);
-  udp_client.endPacket();
-  udp_client.flush();
+  if (sent != len || !udp_client.endPacket()) {
+    *errcode = 1;
+    return 0;
+  }
 
   return sent;
 }
 
 size_t eth_transport_read(struct uxrCustomTransport *transport, uint8_t *buf, size_t len, int timeout, uint8_t *errcode) {
-  (void)errcode;
+  (void)transport;
+  *errcode = 0;
 
   uint32_t start_time = millis();
 
-  while (millis() - start_time < timeout && udp_client.parsePacket() == 0) {
+  while (udp_client.available() == 0 && udp_client.parsePacket() == 0) {
+    if (timeout <= 0 || uint32_t(millis() - start_time) >= uint32_t(timeout)) {
+      return 0;
+    }
     delay(1);
   }
 
-  int readed = udp_client.read(buf, len);
-
-  return (readed < 0) ? 0 : readed;
+  int received = udp_client.read(buf, len);
+  if (received < 0) {
+    *errcode = 1;
+    return 0;
+  }
+  return size_t(received);
 }
 
 static inline void set_microros_ethernet_udp_transports(char *agent_ip, uint agent_port) {
@@ -104,10 +117,10 @@ static inline void set_microros_ethernet_udp_transports(char *agent_ip, uint age
   locator.port = agent_port;
 
   rmw_uros_set_custom_transport(
-      false,
-      (void *)&locator,
-      eth_transport_open,
-      eth_transport_close,
-      eth_transport_write,
-      eth_transport_read);
+    false,
+    (void *)&locator,
+    eth_transport_open,
+    eth_transport_close,
+    eth_transport_write,
+    eth_transport_read);
 }
