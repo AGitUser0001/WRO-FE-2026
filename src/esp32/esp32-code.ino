@@ -248,7 +248,6 @@ void publish_encoder(int32_t data) {
 
 void motor_subscription_callback(const void *msgin) {
   const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
-  int32_t value = msg->data;
   motor_submit_command(msg->data);
 }
 
