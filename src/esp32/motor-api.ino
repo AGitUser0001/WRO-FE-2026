@@ -1,3 +1,7 @@
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
+
 #define MOTOR_A_IN1_PIN 45
 #define MOTOR_A_IN2_PIN 48
 #define MOTOR_A_PWM_PIN 47
@@ -23,6 +27,13 @@ static portMUX_TYPE encoder_ticks_mux = portMUX_INITIALIZER_UNLOCKED;
 uint16_t motor_a_target_speed = 0;
 int32_t motor_a_check_speed = 0;
 uint8_t motor_a_dir = DIR_STOP;
+
+struct MotorCommand {
+  int32_t value;
+  uint32_t received_ms;
+};
+
+static QueueHandle_t motor_command_queue = nullptr;
 
 void IRAM_ATTR encoder_ISR() {
   uint8_t A = digitalRead(MOTOR_A_ENCODE1_PIN);
@@ -79,7 +90,7 @@ void motorA_pwm_init() {
       MOTOR_A_PWM_PIN, 2000, 13, LEDC_MOTOR_A_CHANNEL);
 
   if (!ok) {
-    publish_text("An error occurred: Failed to attach ledc motor channel!");
+    error_loop("Failed to attach motor PWM channel");
   }
 }
 
@@ -140,11 +151,42 @@ void Motor_A_Control(uint8_t dir, uint16_t speed) {
   Motor_A_SetLevel(dir, duty);
 }
 
+void motor_submit_command(int32_t value) {
+  MotorCommand command = {constrain(value, -MOTOR_SPEED_MAX, MOTOR_SPEED_MAX), millis()};
+  if (motor_command_queue != nullptr) {
+    xQueueOverwrite(motor_command_queue, &command);
+  }
+}
+
+void motor_command_task(void *) {
+  MotorCommand command = {0, 0};
+  int32_t applied = 0;
+  for (;;) {
+    xQueueReceive(motor_command_queue, &command, pdMS_TO_TICKS(10));
+    int32_t value = command.value;
+    if ((uint32_t)(millis() - command.received_ms) >= MOTOR_COMMAND_TIMEOUT_MS) {
+      command.value = 0;
+      value = 0;
+    }
+    if (value != applied) {
+      uint8_t dir = value > 0 ? DIR_DOWN : value < 0 ? DIR_UP : DIR_STOP;
+      Motor_A_Control(dir, (uint16_t)(value < 0 ? -value : value));
+      applied = value;
+    }
+  }
+}
+
 void motor_init() {
   motorA_io_init();
   motorA_pwm_init();
   motorA_encoder_init();
   Motor_A_Control(DIR_STOP, 0);
+  motor_command_queue = xQueueCreate(1, sizeof(MotorCommand));
+  if (motor_command_queue == nullptr ||
+      xTaskCreatePinnedToCore(motor_command_task, "motor_command", 2048, nullptr,
+                              3, nullptr, 0) != pdPASS) {
+    error_loop("Failed to start motor command watchdog");
+  }
 }
 
 void encoder_check_speed() {

@@ -38,9 +38,6 @@ rcl_node_t node;
 rcl_subscription_t subscriber_motor;
 rcl_timer_t timer_motor;
 std_msgs__msg__Int32 recv_msg_motor;
-static uint32_t last_motor_command_ms = 0;
-static bool motor_command_active = false;
-static bool motor_timeout_stopped = true;
 static uint8_t agent_ping_fail_count = 0;
 
 rcl_publisher_t encoder_publisher;
@@ -229,41 +226,16 @@ void servo_subscription_callback(const void *msgin) {
   log_i("SERVO: cmd=%ld set_value=%ld", (long)value, (long)set_value);
 }
 
-extern uint16_t motor_a_target_speed;
 extern int32_t motor_a_check_speed;
-extern uint8_t motor_a_dir;
-
-#ifndef DIR_STOP
-#define DIR_STOP 0
-#endif
-#ifndef DIR_UP
-#define DIR_UP 1
-#endif
-#ifndef DIR_DOWN
-#define DIR_DOWN 2
-#endif
 
 void motor_safety_stop() {
-  Motor_A_Control(DIR_STOP, 0);
-  last_motor_command_ms = 0;
-  motor_command_active = false;
-  motor_timeout_stopped = true;
+  motor_submit_command(0);
 }
 
 void motor_timer_callback(rcl_timer_t *timer, int64_t last_call_time) {
   RCLC_UNUSED(last_call_time);
   if (timer != NULL) {
     encoder_check_speed();
-
-    uint32_t now_ms = millis();
-    bool command_stale =
-        motor_command_active &&
-        ((uint32_t)(now_ms - last_motor_command_ms) > MOTOR_COMMAND_TIMEOUT_MS);
-
-    if (command_stale && !motor_timeout_stopped) {
-      motor_safety_stop();
-      publish_text("MOTOR SAFETY: command timeout, forced stop");
-    }
 
     publish_encoder(motor_a_check_speed);
   }
@@ -277,31 +249,7 @@ void publish_encoder(int32_t data) {
 void motor_subscription_callback(const void *msgin) {
   const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
   int32_t value = msg->data;
-
-  // DIR_STOP = 0, DIR_UP = 1, DIR_DOWN = 2
-  uint8_t dir;
-  uint16_t speed;
-
-  if (value == 0) {
-    dir = DIR_STOP;
-    speed = 0;
-  } else {
-    if (value > 0) {
-      dir = DIR_DOWN;
-    } else {
-      dir = DIR_UP;
-    }
-
-    int32_t abs_val = (value > 0) ? value : -value;
-    speed = (uint16_t)abs_val;
-  }
-
-  last_motor_command_ms = millis();
-  motor_command_active = (value != 0);
-  motor_timeout_stopped = (value == 0);
-  Motor_A_Control(dir, speed);
-
-  log_i("MOTOR: cmd=%ld dir=%d speed=%u", (long)value, (int)dir, (unsigned int)speed);
+  motor_submit_command(msg->data);
 }
 
 void audio_subscription_callback(const void *msgin) {
@@ -510,11 +458,13 @@ void loop() {
   switch (agent_state) {
 
   case WAITING_AGENT:
-    motor_safety_stop();
-    EXECUTE_EVERY_N_MS(500, if (!ETH.linkUp()) { log_w("Ethernet link down, waiting..."); } else {
+    EXECUTE_EVERY_N_MS(500,
+      motor_safety_stop();
+      if (!ETH.linkUp()) { log_w("Ethernet link down, waiting..."); } else {
           agent_state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1))
                         ? AGENT_AVAILABLE : WAITING_AGENT;
-          if (agent_state == AGENT_AVAILABLE) log_i("Agent found!"); });
+          if (agent_state == AGENT_AVAILABLE) log_i("Agent found!");
+      });
     break;
 
   case AGENT_AVAILABLE:
